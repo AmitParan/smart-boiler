@@ -1,0 +1,40 @@
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define ONE_WIRE_BUS 4  // GPIO4 for data line
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+int deviceCount = 0;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println("DS18B20 Multi-Sensor Test");
+
+  sensors.begin();
+
+  // Get how many sensors are connected
+  deviceCount = sensors.getDeviceCount();
+  Serial.print("Sensors found: ");
+  Serial.println(deviceCount);
+}
+
+void loop() {
+  // Ask all sensors to measure
+  sensors.requestTemperatures();
+
+  // Read all sensors
+  for (int i = 0; i < deviceCount; i++) {
+    float t = sensors.getTempCByIndex(i);
+
+    Serial.print("Sensor ");
+    Serial.print(i);
+    Serial.print(": ");
+    Serial.print(t);
+    Serial.println(" °C");
+  }
+
+  Serial.println("-------------------------");
+  delay(1000);
+}
