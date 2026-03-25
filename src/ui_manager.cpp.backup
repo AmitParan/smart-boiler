@@ -1,0 +1,636 @@
+#include "ui_manager.h"
+#include <Arduino.h>
+#include <WiFi.h>
+#include <esp_display_panel.hpp>
+#include <lvgl.h>
+#include "lvgl_v8_port.h"
+#include "config.h"
+
+using namespace esp_panel::drivers;
+using namespace esp_panel::board;
+
+// UI Elements
+lv_obj_t* lbl_water_temp = NULL;
+lv_obj_t* lbl_target_temp = NULL;
+lv_obj_t* lbl_weather_temp = NULL;
+lv_obj_t* lbl_weather_icon = NULL;
+lv_obj_t* lbl_time = NULL;
+lv_obj_t* lbl_date = NULL;
+lv_obj_t* btn_power = NULL;
+lv_obj_t* lbl_power_status = NULL;
+lv_obj_t* led_heating = NULL;
+lv_obj_t* btn_timer = NULL;
+lv_obj_t* lbl_timer_status = NULL;
+lv_obj_t* btn_temp_up = NULL;
+lv_obj_t* btn_temp_down = NULL;
+
+// WiFi UI Elements
+lv_obj_t* lbl_wifi_icon = NULL;
+lv_obj_t* wifi_modal = NULL;
+lv_obj_t* wifi_list = NULL;
+lv_obj_t* password_panel = NULL;
+lv_obj_t* password_textarea = NULL;
+lv_obj_t* keyboard = NULL;
+
+bool boiler_state = false;
+bool timer_enabled = false;
+int target_temperature = 60;
+bool wifi_connected = false;
+char selected_network[64] = "";
+String scanned_networks[20];
+int num_networks = 0;
+
+// --- Event Handlers ---
+static void power_btn_event_cb(lv_event_t* e) {
+    boiler_state = !boiler_state;
+    
+    if(boiler_state) {
+        lv_obj_set_style_bg_color(btn_power, lv_palette_main(LV_PALETTE_GREEN), 0);
+        lv_label_set_text(lbl_power_status, LV_SYMBOL_POWER " ON");
+    } else {
+        lv_obj_set_style_bg_color(btn_power, lv_palette_main(LV_PALETTE_RED), 0);
+        lv_label_set_text(lbl_power_status, LV_SYMBOL_POWER " OFF");
+    }
+    
+    Serial.printf("Boiler power: %s\n", boiler_state ? "ON" : "OFF");
+}
+
+static void timer_btn_event_cb(lv_event_t* e) {
+    timer_enabled = !timer_enabled;
+    
+    if(timer_enabled) {
+        lv_obj_set_style_bg_color(btn_timer, lv_palette_main(LV_PALETTE_BLUE), 0);
+        lv_label_set_text(lbl_timer_status, LV_SYMBOL_LOOP " AUTO");
+    } else {
+        lv_obj_set_style_bg_color(btn_timer, lv_color_hex(0x555555), 0);
+        lv_label_set_text(lbl_timer_status, LV_SYMBOL_LOOP " MANUAL");
+    }
+    
+    Serial.printf("Timer mode: %s\n", timer_enabled ? "AUTO" : "MANUAL");
+}
+
+static void temp_up_btn_event_cb(lv_event_t* e) {
+    if(target_temperature < 80) {
+        target_temperature += 5;
+        char buf[16];
+        sprintf(buf, "%d°", target_temperature);
+        lv_label_set_text(lbl_target_temp, buf);
+        Serial.printf("Target temp: %d\n", target_temperature);
+    }
+}
+
+static void temp_down_btn_event_cb(lv_event_t* e) {
+    if(target_temperature > 30) {
+        target_temperature -= 5;
+        char buf[16];
+        sprintf(buf, "%d°", target_temperature);
+        lv_label_set_text(lbl_target_temp, buf);
+        Serial.printf("Target temp: %d\n", target_temperature);
+    }
+}
+
+// --- WiFi Event Handlers ---
+static void close_wifi_modal(lv_event_t* e) {
+    if(wifi_modal != NULL) {
+        lv_obj_del(wifi_modal);
+        wifi_modal = NULL;
+        wifi_list = NULL;
+        password_panel = NULL;
+        password_textarea = NULL;
+        keyboard = NULL;
+    }
+}
+
+static void wifi_connect_btn_event_cb(lv_event_t* e) {
+    // Get password from textarea
+    const char* password = lv_textarea_get_text(password_textarea);
+    
+    Serial.printf("Attempting to connect to: %s\n", selected_network);
+    
+    // Disconnect if already connected
+    if(WiFi.status() == WL_CONNECTED) {
+        WiFi.disconnect();
+        delay(100);
+    }
+    
+    // Attempt connection
+    WiFi.begin(selected_network, password);
+    
+    // Wait for connection (with timeout)
+    int timeout = 20; // 20 seconds
+    while(WiFi.status() != WL_CONNECTED && timeout > 0) {
+        delay(500);
+        Serial.print(".");
+        timeout--;
+    }
+    
+    if(WiFi.status() == WL_CONNECTED) {
+        wifi_connected = true;
+        
+        // Update top bar icon to green
+        if(lbl_wifi_icon != NULL) {
+            lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
+        }
+        
+        Serial.printf("\nWiFi connected! IP: %s\n", WiFi.localIP().toString().c_str());
+    } else {
+        wifi_connected = false;
+        
+        // Keep icon red
+        if(lbl_wifi_icon != NULL) {
+            lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_RED), 0);
+        }
+        
+        Serial.println("\nWiFi connection failed!");
+    }
+    
+    // Close modal
+    close_wifi_modal(e);
+}
+
+static void show_password_entry(const char* network_name) {
+    if(wifi_modal == NULL) return;
+    
+    strncpy(selected_network, network_name, sizeof(selected_network) - 1);
+    
+    // Clear modal content
+    lv_obj_clean(wifi_modal);
+    
+    // Title
+    lv_obj_t * title = lv_label_create(wifi_modal);
+    lv_label_set_text_fmt(title, "Connect to: %s", network_name);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 20);
+    
+    // Password panel
+    password_panel = lv_obj_create(wifi_modal);
+    lv_obj_set_size(password_panel, 500, 350);
+    lv_obj_align(password_panel, LV_ALIGN_CENTER, 0, -20);
+    lv_obj_set_style_bg_color(password_panel, lv_color_white(), 0);
+    lv_obj_set_style_radius(password_panel, 15, 0);
+    lv_obj_set_style_border_width(password_panel, 0, 0);
+    
+    // Password label
+    lv_obj_t * pwd_label = lv_label_create(password_panel);
+    lv_label_set_text(pwd_label, "Password:");
+    lv_obj_set_style_text_font(pwd_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(pwd_label, LV_ALIGN_TOP_LEFT, 20, 10);
+    
+    // Password textarea
+    password_textarea = lv_textarea_create(password_panel);
+    lv_obj_set_size(password_textarea, 460, 50);
+    lv_obj_align(password_textarea, LV_ALIGN_TOP_MID, 0, 40);
+    lv_textarea_set_password_mode(password_textarea, true);
+    lv_textarea_set_placeholder_text(password_textarea, "Enter password");
+    lv_obj_set_style_text_font(password_textarea, &lv_font_montserrat_16, 0);
+    
+    // Keyboard
+    keyboard = lv_keyboard_create(password_panel);
+    lv_obj_set_size(keyboard, 460, 200);
+    lv_obj_align(keyboard, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_keyboard_set_textarea(keyboard, password_textarea);
+    
+    // Button container
+    lv_obj_t * btn_cont = lv_obj_create(wifi_modal);
+    lv_obj_set_size(btn_cont, 500, 60);
+    lv_obj_align(btn_cont, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_style_bg_opa(btn_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(btn_cont, 0, 0);
+    lv_obj_set_flex_flow(btn_cont, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(btn_cont, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    
+    // Cancel button
+    lv_Scan for WiFi networks
+    Serial.println("Scanning WiFi networks...");
+    num_networks = WiFi.scanNetworks();
+    Serial.printf("Found %d networks\n", num_networks);
+    
+    // Store network names
+    for(int i = 0; i < num_networks && i < 20; i++) {
+        scanned_networks[i] = WiFi.SSID(i);
+    }
+    
+    // Create modal background
+    wifi_modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(wifi_modal, 600, 450);
+    lv_obj_center(wifi_modal);
+    lv_obj_set_style_bg_color(wifi_modal, lv_color_hex(0xF0F0F0), 0);
+    lv_obj_set_style_radius(wifi_modal, 20, 0);
+    lv_obj_set_style_border_width(wifi_modal, 2, 0);
+    lv_obj_set_style_border_color(wifi_modal, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_shadow_width(wifi_modal, 30, 0);
+    lv_obj_set_style_shadow_opa(wifi_modal, LV_OPA_30, 0);
+    
+    // Title
+    lv_obj_t * title = lv_label_create(wifi_modal);
+    lv_label_set_text_fmt(title, "Found %d Networks", num_networks);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    
+    // Network list
+    wifi_list = lv_list_create(wifi_modal);
+    lv_obj_set_size(wifi_list, 550, 320);
+    lv_obj_align(wifi_list, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_set_style_radius(wifi_list, 15, 0);
+    
+    // Add scanned networks to list
+    if(num_networks == 0) {
+        lv_obj_t * btn = lv_list_add_btn(wifi_list, LV_SYMBOL_WARNING, "No networks found");
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_18, 0);
+        lv_obj_clear_flag(btn, LV_OBJ_FLAG_CLICKABLE);
+    } else {
+        for(int i = 0; i < num_networks && i < 20; i++) {
+            // Show signal strength icon
+            int rssi = WiFi.RSSI(i);
+            const char* signal_icon = (rssi > -60) ? LV_SYMBOL_WIFI : 
+                                     (rssi > -80) ? LV_SYMBOL_WIFI : LV_SYMBOL_WIFI;
+            
+            // Add network with RSSI
+            char btn_text[80];
+            snprintf(btn_text, sizeof(btn_text), "%s (%d dBm)", scanned_networks[i].c_str(), rssi);
+            
+            lv_obj_t * btn = lv_list_add_btn(wifi_list, signal_icon, btn_text);
+            lv_obj_set_style_text_font(btn, &lv_font_montserrat_18, 0);
+            lv_obj_set_height(btn, 60);
+            
+            // Store network name as user data
+            lv_obj_add_event_cb(btn, wifi_network_btn_event_cb, LV_EVENT_CLICKED, (void*)scanned_networks[i].c_str());
+        }
+    lv_obj_set_size(wifi_modal, 600, 450);
+    lv_obj_center(wifi_modal);
+    lv_obj_set_style_bg_color(wifi_modal, lv_color_hex(0xF0F0F0), 0);
+    lv_obj_set_style_radius(wifi_modal, 20, 0);
+    lv_obj_set_style_border_width(wifi_modal, 2, 0);
+    lv_obj_set_style_border_color(wifi_modal, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_style_shadow_width(wifi_modal, 30, 0);
+    lv_obj_set_style_shadow_opa(wifi_modal, LV_OPA_30, 0);
+    
+    // Title
+    lv_obj_t * title = lv_label_create(wifi_modal);
+    lv_label_set_text(title, "Select Network");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 15);
+    
+    // Network list
+    wifi_list = lv_list_create(wifi_modal);
+    lv_obj_set_size(wifi_list, 550, 320);
+    lv_obj_align(wifi_list, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_set_style_radius(wifi_list, 15, 0);
+    
+    // Add dummy networks
+    const char* networks[] = {"Home_WiFi", "Guest_Net", "Office_5G", "Mobile_Hotspot"};
+    for(int i = 0; i < 4; i++) {
+        lv_obj_t * btn = lv_list_add_btn(wifi_list, LV_SYMBOL_WIFI, networks[i]);
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_18, 0);
+        lv_obj_set_height(btn, 60);
+        
+        // Store network name as user data (need to use static strings)
+        static const char* network_ptrs[4];
+        network_ptrs[i] = networks[i];
+        lv_obj_add_event_cb(btn, wifi_network_btn_event_cb, LV_EVENT_CLICKED, (void*)network_ptrs[i]);
+    }
+    
+    // Close button
+    lv_obj_t * btn_close = lv_btn_create(wifi_modal);
+    lv_obj_set_size(btn_close, 120, 45);
+    lv_obj_align(btn_close, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_style_radius(btn_close, 15, 0);
+    lv_obj_set_style_bg_color(btn_close, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_add_event_cb(btn_close, close_wifi_modal, LV_EVENT_CLICKED, NULL);
+    
+    lv_obj_t * lbl_close = lv_label_create(btn_close);
+    lv_label_set_text(lbl_close, "Close");
+    lv_obj_set_style_text_font(lbl_close, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_close, lv_color_white(), 0);
+    lv_obj_center(lbl_close);
+}
+
+static void wifi_icon_click_event_cb(lv_event_t* e) {
+    show_wifi_menu();
+}
+
+// --- Helper: Create compact info card ---
+void create_info_card(lv_obj_t* parent, const char* title, lv_obj_t** label_ptr, const char* unit, lv_color_t color) {
+    lv_obj_t * card = lv_obj_create(parent);
+    lv_obj_set_size(card, 150, 100);
+    lv_obj_set_style_radius(card, 15, 0);
+    lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
+    lv_obj_set_style_shadow_width(card, 10, 0);
+    lv_obj_set_style_shadow_opa(card, LV_OPA_20, 0);
+    lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_scrollbar_mode(card, LV_SCROLLBAR_MODE_OFF);
+
+    // Title
+    lv_obj_t * lbl_title = lv_label_create(card);
+    lv_label_set_text(lbl_title, title);
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_title, lv_color_make(100, 100, 100), 0);
+
+    // Value
+    *label_ptr = lv_label_create(card);
+    lv_label_set_text(*label_ptr, "--");
+    lv_obj_set_style_text_font(*label_ptr, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_transform_zoom(*label_ptr, 400, 0);
+    lv_obj_set_style_text_color(*label_ptr, color, 0);
+    
+    // Unit
+    lv_obj_t * lbl_unit = lv_label_create(card);
+    lv_label_set_text(lbl_unit, unit);
+    lv_obj_set_style_text_font(lbl_unit, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_unit, lv_palette_main(LV_PALETTE_GREY), 0);
+}
+
+void UI_Init() {
+    // Initialize display hardware
+    Board *board = new Board();
+    board->init();
+    board->begin();
+    lvgl_port_init(board->getLCD(), board->getTouch());
+
+    lvgl_port_lock(-1);
+    
+    lv_obj_t * scr = lv_scr_act();
+    lv_obj_set_style_bg_color(scr, lv_color_hex(0xF5F5F5), 0);
+
+    // === TOP BAR ===
+    lv_obj_t * top_bar = lv_obj_create(scr);
+    lv_obj_set_size(top_bar, 800, 40);
+    lv_obj_set_pos(top_bar, 0, 0);
+    lv_obj_set_style_bg_color(top_bar, lv_color_white(), 0);
+    lv_obj_set_style_border_width(top_bar, 0, 0);
+    lv_obj_set_style_radius(top_bar, 0, 0);
+    lv_obj_set_flex_flow(top_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(top_bar, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_left(top_bar, 20, 0);
+    lv_obj_set_style_pad_right(top_bar, 20, 0);
+
+    lbl_time = lv_label_create(top_bar);
+    lv_label_set_text(lbl_time, "12:00");
+    lv_obj_set_style_text_font(lbl_time, &lv_font_montserrat_20, 0);
+
+    lbl_date = lv_label_create(top_bar);
+    lv_label_set_text(lbl_date, "Jan 10");
+    lv_obj_set_style_text_font(lbl_date, &lv_font_montserrat_14, 0);
+    
+    // WiFi icon
+    lv_obj_t * wifi_btn = lv_btn_create(top_bar);
+    lv_obj_set_size(wifi_btn, 50, 30);
+    lv_obj_set_style_radius(wifi_btn, 8, 0);
+    lv_obj_set_style_bg_color(wifi_btn, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_style_border_width(wifi_btn, 0, 0);
+    lv_obj_add_event_cb(wifi_btn, wifi_icon_click_event_cb, LV_EVENT_CLICKED, NULL);
+    
+    lbl_wifi_icon = lv_label_create(wifi_btn);
+    lv_label_set_text(lbl_wifi_icon, LV_SYMBOL_WIFI);
+    lv_obj_set_style_text_font(lbl_wifi_icon, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_center(lbl_wifi_icon);
+
+    // === MAIN CONTENT - Single row layout ===
+    lv_obj_t * main_row = lv_obj_create(scr);
+    lv_obj_set_size(main_row, 800, 440);
+    lv_obj_set_pos(main_row, 0, 40);
+    lv_obj_set_style_bg_opa(main_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(main_row, 0, 0);
+    lv_obj_set_style_pad_all(main_row, 10, 0);
+    lv_obj_set_flex_flow(main_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(main_row, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // === LEFT: Temperature Circle ===
+    lv_obj_t * temp_circle = lv_obj_create(main_row);
+    lv_obj_set_size(temp_circle, 200, 200);
+    lv_obj_set_style_radius(temp_circle, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(temp_circle, lv_color_white(), 0);
+    lv_obj_set_style_border_width(temp_circle, 6, 0);
+    lv_obj_set_style_border_color(temp_circle, lv_palette_main(LV_PALETTE_BLUE), 0);
+    lv_obj_set_flex_flow(temp_circle, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(temp_circle, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t * lbl_temp_label = lv_label_create(temp_circle);
+    lv_label_set_text(lbl_temp_label, "Water");
+    lv_obj_set_style_text_font(lbl_temp_label, &lv_font_montserrat_14, 0);
+
+    lbl_water_temp = lv_label_create(temp_circle);
+    lv_label_set_text(lbl_water_temp, "--°");
+    lv_obj_set_style_text_font(lbl_water_temp, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(lbl_water_temp, lv_palette_main(LV_PALETTE_BLUE), 0);
+
+    led_heating = lv_led_create(temp_circle);
+    lv_obj_set_size(led_heating, 12, 12);
+    lv_led_set_color(led_heating, lv_palette_main(LV_PALETTE_ORANGE));
+    lv_led_off(led_heating);
+
+    // === CENTER: Controls column ===
+    lv_obj_t * center_col = lv_obj_create(main_row);
+    lv_obj_set_size(center_col, 240, 400);
+    lv_obj_set_style_bg_opa(center_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(center_col, 0, 0);
+    lv_obj_set_flex_flow(center_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(center_col, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Target temp control
+    lv_obj_t * target_row = lv_obj_create(center_col);
+    lv_obj_set_size(target_row, 220, 70);
+    lv_obj_set_style_bg_color(target_row, lv_color_white(), 0);
+    lv_obj_set_style_radius(target_row, 35, 0);
+    lv_obj_set_style_border_width(target_row, 0, 0);
+    lv_obj_set_flex_flow(target_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(target_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    btn_temp_down = lv_btn_create(target_row);
+    lv_obj_set_size(btn_temp_down, 50, 50);
+    lv_obj_set_style_radius(btn_temp_down, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(btn_temp_down, lv_palette_lighten(LV_PALETTE_GREY, 3), 0);
+    lv_obj_add_event_cb(btn_temp_down, temp_down_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_minus = lv_label_create(btn_temp_down);
+    lv_label_set_text(lbl_minus, LV_SYMBOL_MINUS);
+    lv_obj_set_style_text_font(lbl_minus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_transform_zoom(lbl_minus, 300, 0);
+    lv_obj_center(lbl_minus);
+
+    lv_obj_t * target_cont = lv_obj_create(target_row);
+    lv_obj_set_size(target_cont, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(target_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(target_cont, 0, 0);
+    lv_obj_set_flex_flow(target_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(target_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    
+    lv_obj_t * lbl_target_label = lv_label_create(target_cont);
+    lv_label_set_text(lbl_target_label, "Target");
+    lv_obj_set_style_text_color(lbl_target_label, lv_color_hex(0x888888), 0);
+    lv_obj_set_style_text_font(lbl_target_label, &lv_font_montserrat_10, 0);
+    
+    lbl_target_temp = lv_label_create(target_cont);
+    lv_label_set_text(lbl_target_temp, "60°");
+    lv_obj_set_style_text_font(lbl_target_temp, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_transform_zoom(lbl_target_temp, 350, 0);
+    lv_obj_set_style_text_color(lbl_target_temp, lv_color_hex(0x333333), 0);
+
+    btn_temp_up = lv_btn_create(target_row);
+    lv_obj_set_size(btn_temp_up, 50, 50);
+    lv_obj_set_style_radius(btn_temp_up, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(btn_temp_up, lv_palette_lighten(LV_PALETTE_GREY, 3), 0);
+    lv_obj_add_event_cb(btn_temp_up, temp_up_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t * lbl_plus = lv_label_create(btn_temp_up);
+    lv_label_set_text(lbl_plus, LV_SYMBOL_PLUS);
+    lv_obj_set_style_text_font(lbl_plus, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_transform_zoom(lbl_plus, 300, 0);
+    lv_obj_center(lbl_plus);
+
+    // Weather card
+    lv_obj_t * weather_card = lv_obj_create(center_col);
+    lv_obj_set_size(weather_card, 220, 80);
+    lv_obj_set_style_radius(weather_card, 15, 0);
+    lv_obj_set_style_bg_color(weather_card, lv_color_hex(0xFFE082), 0);
+    lv_obj_set_style_border_width(weather_card, 0, 0);
+    lv_obj_set_flex_flow(weather_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(weather_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lbl_weather_temp = lv_label_create(weather_card);
+    lv_label_set_text(lbl_weather_temp, "22°");
+    lv_obj_set_style_text_font(lbl_weather_temp, &lv_font_montserrat_24, 0);
+
+    lbl_weather_icon = lv_label_create(weather_card);
+    lv_label_set_text(lbl_weather_icon, "Sunny");
+    lv_obj_set_style_text_font(lbl_weather_icon, &lv_font_montserrat_12, 0);
+
+    // === RIGHT: Control Buttons ===
+    lv_obj_t * right_col = lv_obj_create(main_row);
+    lv_obj_set_size(right_col, 300, 400);
+    lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(right_col, 0, 0);
+    lv_obj_set_flex_flow(right_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(right_col, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Power button
+    btn_power = lv_btn_create(right_col);
+    lv_obj_set_size(btn_power, 250, 100);
+    lv_obj_set_style_radius(btn_power, 20, 0);
+    lv_obj_set_style_bg_color(btn_power, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_add_event_cb(btn_power, power_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lbl_power_status = lv_label_create(btn_power);
+    lv_label_set_text(lbl_power_status, "OFF");
+    lv_obj_set_style_text_font(lbl_power_status, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(lbl_power_status, lv_color_white(), 0);
+    lv_obj_center(lbl_power_status);
+
+    // Timer button
+    btn_timer = lv_btn_create(right_col);
+    lv_obj_set_size(btn_timer, 250, 100);
+    lv_obj_set_style_radius(btn_timer, 20, 0);
+    lv_obj_set_style_bg_color(btn_timer, lv_color_hex(0x555555), 0);
+    lv_obj_add_event_cb(btn_timer, timer_btn_event_cb, LV_EVENT_CLICKED, NULL);
+
+    lbl_timer_status = lv_label_create(btn_timer);
+    lv_label_set_text(lbl_timer_status, "MANUAL");
+    lv_obj_set_style_text_font(lbl_timer_status, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(lbl_timer_status, lv_color_white(), 0);
+    lv_obj_center(lbl_timer_status);
+
+    lvgl_port_unlock();
+}
+
+
+void UI_UpdateWaterTemp(float value) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(lbl_water_temp != NULL && value > -100) {
+            char buf[16];
+            sprintf(buf, "%.0f°", value);
+            lv_label_set_text(lbl_water_temp, buf);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateWeather(float temp, const char* condition) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(lbl_weather_temp != NULL) {
+            char buf[16];
+            sprintf(buf, "%.0f°", temp);
+            lv_label_set_text(lbl_weather_temp, buf);
+        }
+        
+        if(lbl_weather_icon != NULL && condition != NULL) {
+            // Simple icon mapping
+            if(strstr(condition, "sun") || strstr(condition, "clear")) {
+                lv_label_set_text(lbl_weather_icon, LV_SYMBOL_IMAGE);  // Sunny
+            } else if(strstr(condition, "cloud")) {
+                lv_label_set_text(lbl_weather_icon, LV_SYMBOL_SETTINGS);  // Cloud placeholder
+            } else if(strstr(condition, "rain")) {
+                lv_label_set_text(lbl_weather_icon, LV_SYMBOL_DOWNLOAD);
+            } else {
+                lv_label_set_text(lbl_weather_icon, LV_SYMBOL_EYE_OPEN);
+            }
+        }
+        
+        lvgl_port_unlock();
+    }
+}
+
+void UI_SetBoilerState(bool is_on) {
+    boiler_state = is_on;
+    
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(btn_power != NULL && lbl_power_status != NULL) {
+            if(is_on) {
+                lv_obj_set_style_bg_color(btn_power, lv_palette_main(LV_PALETTE_GREEN), 0);
+                lv_label_set_text(lbl_power_status, LV_SYMBOL_POWER " ON");
+            } else {
+                lv_obj_set_style_bg_color(btn_power, lv_palette_main(LV_PALETTE_RED), 0);
+                lv_label_set_text(lbl_power_status, LV_SYMBOL_POWER " OFF");
+            }
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_SetHeatingStatus(bool is_heating) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(led_heating != NULL) {
+            if(is_heating) {
+                lv_led_on(led_heating);
+            } else {
+                lv_led_off(led_heating);
+            }
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateTime(int hour, int minute) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(lbl_time != NULL) {
+            char buf[16];
+            sprintf(buf, "%02d:%02d", hour, minute);
+            lv_label_set_text(lbl_time, buf);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateDate(const char* date_str) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(lbl_date != NULL && date_str != NULL) {
+            lv_label_set_text(lbl_date, date_str);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateWiFiStatus() {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if(lbl_wifi_icon != NULL) {
+            if(WiFi.status() == WL_CONNECTED) {
+                wifi_connected = true;
+                lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_GREEN), 0);
+            } else {
+                wifi_connected = false;
+                lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_RED), 0);
+            }
+        }
+        lvgl_port_unlock();
+    }
+}
