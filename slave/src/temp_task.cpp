@@ -16,17 +16,11 @@ void TaskTemp(void * pvParameters) {
         // Send measurement request
         sensors.requestTemperatures();
         
-        // Wait for sensor to finish measuring (1000ms for safety)
-        vTaskDelay(pdMS_TO_TICKS(1000));
 
         // Read data and update shared array
-        int count = sensors.getDeviceCount();
         for(int i=0; i<3; i++) {
-            if (i < count) {
-                temps[i] = sensors.getTempCByIndex(i);
-            } else {
-                temps[i] = 0.0;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            temps[i] = sensors.getTempCByIndex(i);
             }
         }
     }
-}
