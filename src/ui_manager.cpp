@@ -10,7 +10,7 @@
 #include "DataManager.h"
 
 // OpenWeatherMap API - Get your free API key from https://openweathermap.org/api
-#define WEATHER_API_KEY "7401fcd981349ea54d8cd0cbc98f38d9"  // Replace with your API key
+#define WEATHER_API_KEY ""  // Set locally before enabling weather API requests
 #define WEATHER_CITY "Tel Aviv"  // Change to your city
 #define WEATHER_COUNTRY_CODE "IL"  // Change to your country code
 #define WEATHER_UPDATE_INTERVAL 600000  // Update every 10 minutes
