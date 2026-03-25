@@ -9,16 +9,16 @@ void setup() {
     Serial.println("--- SLAVE UNIT STARTED ---");
 
     // 1. Flow task (Core 1)
-    xTaskCreatePinnedToCore(TaskFlow, "Flow", 4096, NULL, 1, NULL, 1);
+    xTaskCreate(TaskFlow, "Flow", 4096, NULL, 1, NULL);
 
     // 2. Temperature task (Core 1)
-    xTaskCreatePinnedToCore(TaskTemp, "Temp", 4096, NULL, 1, NULL, 1);
+    xTaskCreate(TaskTemp, "Temp", 4096, NULL, 1, NULL);
 
     // 3. Communication task with Master (Core 0)
-    xTaskCreatePinnedToCore(TaskComms, "Comms", 4096, NULL, 1, NULL, 0);
+    xTaskCreate(TaskComms, "Comms", 4096, NULL, 1, NULL);
     
     // 4. PLC Communication task (Core 0 - handles KQ330 PLC)
-    xTaskCreatePinnedToCore(TaskPLC, "PLC", 4096, NULL, 1, NULL, 0);
+    xTaskCreate(TaskPLC, "PLC", 4096, NULL, 1, NULL);
 }
 
 void loop() {
