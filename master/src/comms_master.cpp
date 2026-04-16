@@ -45,11 +45,8 @@ void TaskMasterComms(void * pvParameters) {
                 float t3 = doc["t3"];
                 float flow = doc["flow"];
 
-                // Update display - use main water temperature (t1)
-                UI_UpdateWaterTemp(t1);
-                
-                // You can also display heating status based on temp rise
-                // UI_SetHeatingStatus(true/false);
+                // Update all home screen widgets from the live slave packet
+                UI_UpdateSensorData(t1, t2, flow);
                 
                 // Serial.println("Data Updated!"); // for debugging
             } else {

@@ -48,6 +48,15 @@ lv_obj_t* screensaver = NULL;
 lv_obj_t* screensaver_time = NULL;
 lv_obj_t* screensaver_date = NULL;
 unsigned long last_touch_time = 0;
+
+// Extended Home Screen elements (full packet data)
+lv_obj_t* lbl_boost_temp = NULL;
+lv_obj_t* lbl_flow_rate = NULL;
+lv_obj_t* lbl_showers = NULL;
+lv_obj_t* lbl_wait_time = NULL;
+lv_obj_t* lbl_system_mode = NULL;
+lv_obj_t* led_ssr_internal = NULL;
+lv_obj_t* led_ssr_boost = NULL;
 #define SCREENSAVER_TIMEOUT 60000  // 1 minute of inactivity
 
 bool boiler_state = false;
@@ -610,7 +619,7 @@ void UI_Init() {
     // === MAIN CONTENT - Single row layout ===
     lv_obj_t * main_row = lv_obj_create(scr);
     disableScroll(main_row);
-    lv_obj_set_size(main_row, 800, 440);
+    lv_obj_set_size(main_row, 800, 360);
     lv_obj_set_pos(main_row, 0, 40);
     lv_obj_set_style_bg_opa(main_row, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(main_row, 0, 0);
@@ -646,7 +655,7 @@ void UI_Init() {
     // === CENTER: Controls column ===
     lv_obj_t * center_col = lv_obj_create(main_row);
     disableScroll(center_col);
-    lv_obj_set_size(center_col, 240, 400);
+    lv_obj_set_size(center_col, 240, 320);
     lv_obj_set_style_bg_opa(center_col, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(center_col, 0, 0);
     lv_obj_set_flex_flow(center_col, LV_FLEX_FLOW_COLUMN);
@@ -725,10 +734,28 @@ void UI_Init() {
     lv_label_set_text(lbl_weather_icon, "Loading...");
     lv_obj_set_style_text_font(lbl_weather_icon, &lv_font_montserrat_12, 0);
 
+    // System mode indicator card
+    lv_obj_t* mode_card = lv_obj_create(center_col);
+    disableScroll(mode_card);
+    lv_obj_set_size(mode_card, 220, 60);
+    lv_obj_set_style_radius(mode_card, 15, 0);
+    lv_obj_set_style_bg_color(mode_card, lv_color_hex(0xE3F2FD), 0);
+    lv_obj_set_style_border_width(mode_card, 0, 0);
+    lv_obj_set_flex_flow(mode_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(mode_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* mode_title = lv_label_create(mode_card);
+    lv_label_set_text(mode_title, "MODE");
+    lv_obj_set_style_text_font(mode_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(mode_title, lv_color_hex(0x777777), 0);
+    lbl_system_mode = lv_label_create(mode_card);
+    lv_label_set_text(lbl_system_mode, "Passive Solar");
+    lv_obj_set_style_text_font(lbl_system_mode, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_system_mode, lv_palette_main(LV_PALETTE_BLUE), 0);
+
     // === RIGHT: Control Buttons ===
     lv_obj_t * right_col = lv_obj_create(main_row);
     disableScroll(right_col);
-    lv_obj_set_size(right_col, 300, 400);
+    lv_obj_set_size(right_col, 300, 320);
     lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(right_col, 0, 0);
     lv_obj_set_flex_flow(right_col, LV_FLEX_FLOW_COLUMN);
@@ -761,10 +788,136 @@ void UI_Init() {
     lv_obj_set_style_text_font(lbl_timer_status, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(lbl_timer_status, lv_color_white(), 0);
     lv_obj_center(lbl_timer_status);
-    
+
+    // SSR Status indicators
+    lv_obj_t* ssr_row = lv_obj_create(right_col);
+    disableScroll(ssr_row);
+    lv_obj_set_size(ssr_row, 250, 70);
+    lv_obj_set_style_bg_color(ssr_row, lv_color_hex(0xF5F5F5), 0);
+    lv_obj_set_style_radius(ssr_row, 15, 0);
+    lv_obj_set_style_border_width(ssr_row, 0, 0);
+    lv_obj_set_flex_flow(ssr_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ssr_row, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* ssr_int_cont = lv_obj_create(ssr_row);
+    disableScroll(ssr_int_cont);
+    lv_obj_set_size(ssr_int_cont, 100, 60);
+    lv_obj_set_style_bg_opa(ssr_int_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ssr_int_cont, 0, 0);
+    lv_obj_set_flex_flow(ssr_int_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(ssr_int_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    led_ssr_internal = lv_led_create(ssr_int_cont);
+    lv_obj_set_size(led_ssr_internal, 16, 16);
+    lv_led_set_color(led_ssr_internal, lv_palette_main(LV_PALETTE_RED));
+    lv_led_off(led_ssr_internal);
+    lv_obj_t* lbl_ssr_int_title = lv_label_create(ssr_int_cont);
+    lv_label_set_text(lbl_ssr_int_title, "Tank SSR");
+    lv_obj_set_style_text_font(lbl_ssr_int_title, &lv_font_montserrat_10, 0);
+
+    lv_obj_t* ssr_boost_cont = lv_obj_create(ssr_row);
+    disableScroll(ssr_boost_cont);
+    lv_obj_set_size(ssr_boost_cont, 100, 60);
+    lv_obj_set_style_bg_opa(ssr_boost_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ssr_boost_cont, 0, 0);
+    lv_obj_set_flex_flow(ssr_boost_cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(ssr_boost_cont, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    led_ssr_boost = lv_led_create(ssr_boost_cont);
+    lv_obj_set_size(led_ssr_boost, 16, 16);
+    lv_led_set_color(led_ssr_boost, lv_palette_main(LV_PALETTE_BLUE));
+    lv_led_off(led_ssr_boost);
+    lv_obj_t* lbl_ssr_boost_title = lv_label_create(ssr_boost_cont);
+    lv_label_set_text(lbl_ssr_boost_title, "Boost SSR");
+    lv_obj_set_style_text_font(lbl_ssr_boost_title, &lv_font_montserrat_10, 0);
+
     // Add touch event to screen to reset screensaver timer
     lv_obj_add_event_cb(scr, screen_touched_cb, LV_EVENT_PRESSED, NULL);
-    
+
+    // === BOTTOM STRIP: Live sensor data (t2, flow, derived metrics) ===
+    lv_obj_t* bottom_strip = lv_obj_create(scr);
+    disableScroll(bottom_strip);
+    lv_obj_set_size(bottom_strip, 800, 80);
+    lv_obj_set_pos(bottom_strip, 0, 400);
+    lv_obj_set_style_bg_color(bottom_strip, lv_color_white(), 0);
+    lv_obj_set_style_border_side(bottom_strip, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_width(bottom_strip, 1, 0);
+    lv_obj_set_style_border_color(bottom_strip, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_style_radius(bottom_strip, 0, 0);
+    lv_obj_set_style_pad_all(bottom_strip, 8, 0);
+    lv_obj_set_flex_flow(bottom_strip, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(bottom_strip, LV_FLEX_ALIGN_SPACE_AROUND, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    // Boost Temp mini-card
+    lv_obj_t* boost_card = lv_obj_create(bottom_strip);
+    disableScroll(boost_card);
+    lv_obj_set_size(boost_card, 175, 64);
+    lv_obj_set_style_radius(boost_card, 12, 0);
+    lv_obj_set_style_bg_color(boost_card, lv_color_hex(0xFFF3E0), 0);
+    lv_obj_set_style_border_width(boost_card, 0, 0);
+    lv_obj_set_flex_flow(boost_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(boost_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* boost_card_title = lv_label_create(boost_card);
+    lv_label_set_text(boost_card_title, "Boost Temp");
+    lv_obj_set_style_text_font(boost_card_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(boost_card_title, lv_color_hex(0x777777), 0);
+    lbl_boost_temp = lv_label_create(boost_card);
+    lv_label_set_text(lbl_boost_temp, "--°C");
+    lv_obj_set_style_text_font(lbl_boost_temp, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_boost_temp, lv_palette_main(LV_PALETTE_DEEP_ORANGE), 0);
+
+    // Flow Rate mini-card
+    lv_obj_t* flow_card = lv_obj_create(bottom_strip);
+    disableScroll(flow_card);
+    lv_obj_set_size(flow_card, 175, 64);
+    lv_obj_set_style_radius(flow_card, 12, 0);
+    lv_obj_set_style_bg_color(flow_card, lv_color_hex(0xE0F7FA), 0);
+    lv_obj_set_style_border_width(flow_card, 0, 0);
+    lv_obj_set_flex_flow(flow_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(flow_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* flow_card_title = lv_label_create(flow_card);
+    lv_label_set_text(flow_card_title, "Flow Rate");
+    lv_obj_set_style_text_font(flow_card_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(flow_card_title, lv_color_hex(0x777777), 0);
+    lbl_flow_rate = lv_label_create(flow_card);
+    lv_label_set_text(lbl_flow_rate, "-- L/m");
+    lv_obj_set_style_text_font(lbl_flow_rate, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_flow_rate, lv_palette_main(LV_PALETTE_CYAN), 0);
+
+    // Showers Available mini-card
+    lv_obj_t* showers_card = lv_obj_create(bottom_strip);
+    disableScroll(showers_card);
+    lv_obj_set_size(showers_card, 175, 64);
+    lv_obj_set_style_radius(showers_card, 12, 0);
+    lv_obj_set_style_bg_color(showers_card, lv_color_hex(0xE8F5E9), 0);
+    lv_obj_set_style_border_width(showers_card, 0, 0);
+    lv_obj_set_flex_flow(showers_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(showers_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* showers_card_title = lv_label_create(showers_card);
+    lv_label_set_text(showers_card_title, "Showers Ready");
+    lv_obj_set_style_text_font(showers_card_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(showers_card_title, lv_color_hex(0x777777), 0);
+    lbl_showers = lv_label_create(showers_card);
+    lv_label_set_text(lbl_showers, "--");
+    lv_obj_set_style_text_font(lbl_showers, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_showers, lv_palette_main(LV_PALETTE_GREEN), 0);
+
+    // Wait Time mini-card
+    lv_obj_t* wait_card = lv_obj_create(bottom_strip);
+    disableScroll(wait_card);
+    lv_obj_set_size(wait_card, 175, 64);
+    lv_obj_set_style_radius(wait_card, 12, 0);
+    lv_obj_set_style_bg_color(wait_card, lv_color_hex(0xFFF8E1), 0);
+    lv_obj_set_style_border_width(wait_card, 0, 0);
+    lv_obj_set_flex_flow(wait_card, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(wait_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_t* wait_card_title = lv_label_create(wait_card);
+    lv_label_set_text(wait_card_title, "Wait Time");
+    lv_obj_set_style_text_font(wait_card_title, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(wait_card_title, lv_color_hex(0x777777), 0);
+    lbl_wait_time = lv_label_create(wait_card);
+    lv_label_set_text(lbl_wait_time, "-- min");
+    lv_obj_set_style_text_font(lbl_wait_time, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_wait_time, lv_palette_main(LV_PALETTE_ORANGE), 0);
+
     // Create screensaver
     createScreensaver();
     
@@ -883,6 +1036,129 @@ void UI_UpdateWiFiStatus() {
                 lv_obj_set_style_text_color(lbl_wifi_icon, lv_palette_main(LV_PALETTE_RED), 0);
             }
         }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateBoostTemp(float value) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if (lbl_boost_temp != NULL && value > -100) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0C", value);
+            lv_label_set_text(lbl_boost_temp, buf);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateFlowRate(float value) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if (lbl_flow_rate != NULL && value >= 0) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%.1f L/m", value);
+            lv_label_set_text(lbl_flow_rate, buf);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateSystemMode(const char* mode) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if (lbl_system_mode != NULL && mode != NULL) {
+            lv_label_set_text(lbl_system_mode, mode);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+void UI_UpdateSSRStatus(bool internal_on, bool boost_on) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if (led_ssr_internal != NULL) {
+            if (internal_on) lv_led_on(led_ssr_internal);
+            else             lv_led_off(led_ssr_internal);
+        }
+        if (led_ssr_boost != NULL) {
+            if (boost_on) lv_led_on(led_ssr_boost);
+            else          lv_led_off(led_ssr_boost);
+        }
+        lvgl_port_unlock();
+    }
+}
+
+// Master entry point: receives all three live fields from the slave packet and
+// updates every Home Screen widget in one LVGL lock.
+void UI_UpdateSensorData(float t_internal, float t_boost, float flow) {
+    // --- Derived metrics ---
+    // Showers available: 80 L tank, shower uses ~60 L at 38 C, cold inlet 20 C
+    int showers = 0;
+    if (t_internal > 20.0f) {
+        showers = (int)((t_internal - 20.0f) * 80.0f / (60.0f * 18.0f));
+    }
+
+    // Minutes to reach target temp (2 kW element, 80 L tank)
+    int wait_min = 0;
+    if (target_temperature > (int)t_internal) {
+        float delta = (float)target_temperature - t_internal;
+        wait_min = (int)(delta * 80.0f * 4186.0f / (2000.0f * 60.0f));
+    }
+
+    // Infer SSR states from known conditions (master commanded state + sensor data)
+    bool internal_ssr = boiler_state && (t_internal < (float)target_temperature);
+    bool boost_ssr    = boiler_state && (flow > 0.5f);  // Boost ONLY when flow detected
+
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        char buf[20];
+
+        // Tank temperature (t1)
+        if (lbl_water_temp != NULL && t_internal > -100) {
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", t_internal);
+            lv_label_set_text(lbl_water_temp, buf);
+        }
+
+        // Boost temperature (t2)
+        if (lbl_boost_temp != NULL && t_boost > -100) {
+            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0C", t_boost);
+            lv_label_set_text(lbl_boost_temp, buf);
+        }
+
+        // Flow rate
+        if (lbl_flow_rate != NULL && flow >= 0) {
+            snprintf(buf, sizeof(buf), "%.1f L/m", flow);
+            lv_label_set_text(lbl_flow_rate, buf);
+        }
+
+        // Showers available
+        if (lbl_showers != NULL) {
+            snprintf(buf, sizeof(buf), "%d", showers);
+            lv_label_set_text(lbl_showers, buf);
+        }
+
+        // Wait time
+        if (lbl_wait_time != NULL) {
+            if (wait_min > 0) {
+                snprintf(buf, sizeof(buf), "%d min", wait_min);
+            } else {
+                snprintf(buf, sizeof(buf), "Ready");
+            }
+            lv_label_set_text(lbl_wait_time, buf);
+        }
+
+        // SSR indicators
+        if (led_ssr_internal != NULL) {
+            if (internal_ssr) lv_led_on(led_ssr_internal);
+            else              lv_led_off(led_ssr_internal);
+        }
+        if (led_ssr_boost != NULL) {
+            if (boost_ssr) lv_led_on(led_ssr_boost);
+            else           lv_led_off(led_ssr_boost);
+        }
+
+        // Heating LED on temp circle
+        if (led_heating != NULL) {
+            if (internal_ssr || boost_ssr) lv_led_on(led_heating);
+            else                           lv_led_off(led_heating);
+        }
+
         lvgl_port_unlock();
     }
 }
