@@ -1,24 +1,24 @@
 #include "plc_task.h"
 #include "plc_comms.h"
+#include "config.h"
 
-/**
- * PLC Communication Task
- * Runs continuously to handle PLC packet reception and processing
- * Non-blocking operation with noise filtering
- */
-void TaskPLC(void * pvParameters) {
-    // Initialize PLC communication
+void TaskPLC(void* pvParameters) {
     PLC_Init();
-    
-    Serial.println("PLC Task started");
-    
-    for(;;) {
-        // Non-blocking packet reception
-        // This will filter noise and only process valid packets
+    Serial.println("[PLC] Task started");
+
+    unsigned long last_send_ms = 0UL;
+
+    for (;;) {
+        // Non-blocking receive — process any incoming CMD bytes
         PLC_ReceivePacket();
-        
-        // Small delay to prevent tight loop
-        // The actual communication is event-driven by Serial2
+
+        // Send status once per second
+        unsigned long now = millis();
+        if (now - last_send_ms >= STATUS_SEND_INTERVAL_MS) {
+            last_send_ms = now;
+            PLC_SendStatus();
+        }
+
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }

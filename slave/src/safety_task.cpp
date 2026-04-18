@@ -1,42 +1,57 @@
 #include "safety_task.h"
 #include "config.h"
 #include "shared_data.h"
+#include "boiler_protocol.h"
 #include <Arduino.h>
 
-void TaskSafety(void * pvParameters) {
-    for(;;) {
-        bool safe_state = true;
-        
-        // 1. Software Overheat Protection (Backup to analog NTC)
-        // temps[2] is assumed to be the external temp sensor
-        if (temps[0] > 80.0 || temps[1] > 80.0 || temps[2] > 80.0) {
-            safe_state = false;
-            Serial.println("SAFETY FAULT: Overheat detected!");
-        }
-        
-        // 2. Flow Interlock for Boost Heater
-        // If Boost is requested but flow is too low, force safe state
-        if (boost_requested && current_flow < 1.0) {
-            safe_state = false;
-            Serial.println("SAFETY FAULT: Boost requested without flow!");
-        }
-        
-        // 3. Dry Run / SSR Short detection (Current flows but no command)
-        if (!internal_requested && !boost_requested && current_rms > 1.0) {
-            // We have current but didn't ask for it! SSR might be shorted closed.
-            Serial.println("SAFETY WARNING: Uncommanded current detected!");
-            // Can't turn off a broken SSR from software, but we can flag it for the user
-            system_fault = true; 
+void TaskSafety(void* pvParameters) {
+    Serial.println("[SAFETY] Task started");
+
+    for (;;) {
+        bool fault = false;
+
+        // -------------------------------------------------------------------
+        //  1. Temperature overheat protection
+        //     DS18B20 sensors: cut power if any reads > 80°C
+        // -------------------------------------------------------------------
+        for (int i = 0; i < 3; i++) {
+            if (temps[i] > 80.0f) {
+                Serial.printf("[SAFETY] FAULT: Overheat sensor[%d] = %.1f°C\n",
+                              i, temps[i]);
+                fault = true;
+            }
         }
 
-        if (!safe_state) {
-            // Cut power immediately, overriding Manager
+        // -------------------------------------------------------------------
+        //  2. Boost heater flow interlock
+        //     Boost element MUST NOT run without water flow (dry-fire risk)
+        // -------------------------------------------------------------------
+        bool boost_commanded = (cmd_flags & CMD_BOOST_ENABLE) &&
+                               (cmd_pwm_boost > 0u);
+        if (boost_commanded && current_flow < 1.0f) {
+            Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
+            fault = true;
+        }
+
+        // -------------------------------------------------------------------
+        //  3. Uncommanded current detection (possible SSR short-circuit)
+        // -------------------------------------------------------------------
+        bool any_commanded = (cmd_pwm_internal > 0u) || (cmd_pwm_boost > 0u);
+        if (!any_commanded && current_rms > 1.0f) {
+            Serial.println("[SAFETY] WARNING: Current detected without command"
+                           " — possible SSR short!");
+            fault = true;
+        }
+
+        if (fault) {
+            // Hard-cut both SSRs — PWM task will also see system_fault
             digitalWrite(PIN_SSR_INT, LOW);
             digitalWrite(PIN_SSR_EXT, LOW);
             system_fault = true;
+            // system_fault is only cleared by a hardware reboot
         }
 
-        // Run very frequently (e.g., every 50ms) to ensure fast response
+        // Run every 50 ms for fast fault response
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

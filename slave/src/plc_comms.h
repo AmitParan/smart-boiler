@@ -2,32 +2,20 @@
 #define PLC_COMMS_H
 
 #include <Arduino.h>
+#include "boiler_protocol.h"
 
-// Packet protocol constants
-#define PLC_START_BYTE  0xAA
-#define PLC_MAX_PAYLOAD 32
+// ---------------------------------------------------------------------------
+//  PLC communication driver
+//  Hardware : KQ-330 modem on Serial2 (RX=16, TX=17, 9600 baud)
+//  Protocol : Binary frames — see boiler_protocol.h
+//
+//  Call PLC_Init() once from TaskPLC.
+//  Call PLC_ReceivePacket() every 10 ms (non-blocking).
+//  Call PLC_SendStatus() once per second.
+// ---------------------------------------------------------------------------
 
-// Command definitions
-#define CMD_LED_ON      0x01
-#define CMD_LED_OFF     0x02
-#define CMD_SET_RELAY   0x03
-#define CMD_GET_TEMP    0x04
-#define CMD_GET_FLOW    0x05
-#define CMD_ACK         0xFF
-
-// Packet structure
-struct PLCPacket {
-    byte startByte;     // 0xAA
-    byte length;        // Length of payload (command + data)
-    byte command;       // Command ID
-    byte data;          // Data byte
-    byte checksum;      // Checksum for validation
-};
-
-// Function declarations
 void PLC_Init();
-void PLC_SendPacket(byte cmd, byte data);
-bool PLC_ReceivePacket();  // Returns true if valid packet received
-void PLC_ProcessCommand(byte cmd, byte data);
+void PLC_SendStatus();
+bool PLC_ReceivePacket();   // returns true if a valid CMD packet was received
 
-#endif
+#endif // PLC_COMMS_H

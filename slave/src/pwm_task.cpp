@@ -1,57 +1,62 @@
 #include "pwm_task.h"
 #include "config.h"
 #include "shared_data.h"
+#include "boiler_protocol.h"
 
-// Define the time window for the slow PWM (Burst Firing) in milliseconds
-// 2000ms (2 seconds) is a standard window for AC thermal regulation
-const int PWM_WINDOW_MS = 2000; 
+// Burst-firing PWM window for AC mains thermal control (50 Hz)
+static const int PWM_WINDOW_MS = 2000;
 
-void TaskPWM(void * pvParameters) {
-    for(;;) {
-        // Check if the manager requested the external heater, 
-        // if there are no system faults, and if there is sufficient water flow
-        if (ext_heater_requested && !system_fault && current_flow >= 1.0) {
-            
-            // 1. Calculate Temperature Error
-            // temps[2] is the temperature sensor AFTER the external heater
-            float temp_error = target_temp - temps[2];
-            
-            // 2. Proportional Control Logic (Determine Duty Cycle)
-            int duty_cycle_percent = 0;
-            
-            if (temp_error >= 5.0) {
-                // If water is much colder than target, apply full power
-                duty_cycle_percent = 100; 
-            } else if (temp_error > 0.0) {
-                // Proportional band: Scale duty cycle between 0% and 100%
-                // For example: 2.5C error -> 50% duty cycle
-                duty_cycle_percent = (int)((temp_error / 5.0) * 100.0); 
-            } else {
-                // Target reached or exceeded, turn off heater
-                duty_cycle_percent = 0; 
-            }
+void TaskPWM(void* pvParameters) {
+    pinMode(PIN_SSR_INT, OUTPUT);
+    pinMode(PIN_SSR_EXT, OUTPUT);
+    digitalWrite(PIN_SSR_INT, LOW);
+    digitalWrite(PIN_SSR_EXT, LOW);
+    Serial.println("[PWM] Task started");
 
-            // 3. Calculate ON and OFF times based on the duty cycle
-            int on_time_ms = (PWM_WINDOW_MS * duty_cycle_percent) / 100;
-            int off_time_ms = PWM_WINDOW_MS - on_time_ms;
-
-            // 4. Execute the PWM Cycle
-            if (on_time_ms > 0) {
-                digitalWrite(PIN_SSR_EXT, HIGH);
-                vTaskDelay(pdMS_TO_TICKS(on_time_ms));
-            }
-            
-            if (off_time_ms > 0) {
-                digitalWrite(PIN_SSR_EXT, LOW);
-                vTaskDelay(pdMS_TO_TICKS(off_time_ms));
-            }
-            
-        } else {
-            // Safety fallback: If not requested, faulted, or no flow - force OFF
+    for (;;) {
+        // ---------------------------------------------------------------
+        //  Safety gate: if ANY fault is active, cut both SSRs immediately
+        // ---------------------------------------------------------------
+        if (system_fault) {
+            digitalWrite(PIN_SSR_INT, LOW);
             digitalWrite(PIN_SSR_EXT, LOW);
-            
-            // Sleep for a short time before checking the conditions again
-            vTaskDelay(pdMS_TO_TICKS(100)); 
+            internal_ssr_on = false;
+            boost_ssr_on    = false;
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
+        }
+
+        // Read master commands (written atomically by plc_task on ESP32)
+        uint8_t pwm_int = cmd_pwm_internal;
+        uint8_t pwm_bst = cmd_pwm_boost;
+        bool    en_int  = (cmd_flags & CMD_HEATER_ENABLE) != 0u;
+        bool    en_bst  = (cmd_flags & CMD_BOOST_ENABLE)  != 0u;
+
+        // ---------------------------------------------------------------
+        //  Internal heater: simple on/off (2 kW tank element)
+        //  Only allowed when master enables it AND sends PWM > 0
+        // ---------------------------------------------------------------
+        bool int_on = en_int && (pwm_int > 0u);
+        digitalWrite(PIN_SSR_INT, int_on ? HIGH : LOW);
+        internal_ssr_on = int_on;
+
+        // ---------------------------------------------------------------
+        //  Boost heater: PWM burst-firing (inline instantaneous heater)
+        //  SAFETY INTERLOCK: forced off if water flow < 1.0 L/min
+        // ---------------------------------------------------------------
+        if (!en_bst || current_flow < 1.0f) {
+            pwm_bst = 0u;
+        }
+        boost_ssr_on = (pwm_bst > 0u);
+
+        if (pwm_bst > 0u) {
+            int on_ms  = (PWM_WINDOW_MS * (int)pwm_bst) / 100;
+            int off_ms = PWM_WINDOW_MS - on_ms;
+            if (on_ms  > 0) { digitalWrite(PIN_SSR_EXT, HIGH); vTaskDelay(pdMS_TO_TICKS(on_ms));  }
+            if (off_ms > 0) { digitalWrite(PIN_SSR_EXT, LOW);  vTaskDelay(pdMS_TO_TICKS(off_ms)); }
+        } else {
+            digitalWrite(PIN_SSR_EXT, LOW);
+            vTaskDelay(pdMS_TO_TICKS(PWM_WINDOW_MS));
         }
     }
 }
