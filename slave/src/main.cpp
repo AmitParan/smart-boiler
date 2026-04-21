@@ -6,6 +6,7 @@
 #include "safety_task.h"
 #include "pwm_task.h"
 #include "plc_task.h"
+// Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
 void setup() {
     Serial.begin(115200);

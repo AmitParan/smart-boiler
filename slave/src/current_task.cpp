@@ -12,14 +12,18 @@ void TaskCurrent(void * pvParameters) {
         
         // Sample the ADC quickly to catch the AC wave (50Hz)
         for (int i = 0; i < numSamples; i++) {
-            // Read ADC (assuming 12-bit on ESP32, 0-4095)
+            // Read ADC (12-bit, 0-4095, 3.3V reference)
             int adc_raw = analogRead(PIN_CURRENT_SENSOR);
-            
-            // Convert ADC to Voltage
-            float voltage = (adc_raw / 4095.0) * 3.3; 
-            
-            // ACS758LCB-050B outputs 40mV/A, centered at VCC/2 (approx 1.65V)
-            float current_instant = (voltage - 1.65) / 0.040;
+
+            // Step 1: ADC count → voltage at the ADC pin
+            float v_adc = (adc_raw / 4095.0f) * 3.3f;
+
+            // Step 2: Reverse the hardware voltage divider (1.8kΩ / 3.3kΩ)
+            //         V_sensor = V_adc × (R1+R2)/R2 = V_adc / CURRENT_DIVIDER_RATIO
+            float v_sensor = v_adc / CURRENT_DIVIDER_RATIO;
+
+            // Step 3: ACS758LCB-050B on 5V — 40mV/A, quiescent at 2.5V
+            float current_instant = (v_sensor - ACS758_VREF) / ACS758_SENSITIVITY;
             
             sumSq += (current_instant * current_instant);
             vTaskDelay(pdMS_TO_TICKS(1)); // 1ms delay between samples
