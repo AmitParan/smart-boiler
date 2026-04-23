@@ -27,16 +27,16 @@ void setup() {
     //    Current— samples ACS758 ADC at 1 kHz for RMS
     // -----------------------------------------------------------------------
 
-    // Sensor tasks
-    xTaskCreatePinnedToCore(TaskFlow,    "Flow",    4096, NULL, 2, NULL, 1);
-    xTaskCreatePinnedToCore(TaskTemp,    "Temp",    4096, NULL, 2, NULL, 1);
-    xTaskCreatePinnedToCore(TaskCurrent, "Current", 4096, NULL, 2, NULL, 1);
+    // ESP32-C6 is single-core — all tasks pinned to Core 0
+    xTaskCreatePinnedToCore(TaskFlow,    "Flow",    4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(TaskTemp,    "Temp",    4096, NULL, 2, NULL, 0);
+    xTaskCreatePinnedToCore(TaskCurrent, "Current", 4096, NULL, 2, NULL, 0);
 
     // Control tasks  (higher priority than sensors)
-    xTaskCreatePinnedToCore(TaskSafety,  "Safety",  4096, NULL, 4, NULL, 1);
-    xTaskCreatePinnedToCore(TaskPWM,     "PWM",     4096, NULL, 3, NULL, 1);
+    xTaskCreatePinnedToCore(TaskSafety,  "Safety",  4096, NULL, 4, NULL, 0);
+    xTaskCreatePinnedToCore(TaskPWM,     "PWM",     4096, NULL, 3, NULL, 0);
 
-    // PLC communication on Core 0
+    // PLC communication
     xTaskCreatePinnedToCore(TaskPLC,     "PLC",     4096, NULL, 2, NULL, 0);
 }
 
