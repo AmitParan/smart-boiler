@@ -32,7 +32,7 @@ static const uint32_t RX_TIMEOUT_MS = 200u;
 // ---------------------------------------------------------------------------
 void PLC_Init() {
     Serial1.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
-    Serial.println("[PLC] Initialised on Serial2 (KQ-330, 9600 baud)");
+    Serial.println("[PLC] Initialised on Serial1 (KQ-330, 9600 baud)");
 }
 
 // ---------------------------------------------------------------------------

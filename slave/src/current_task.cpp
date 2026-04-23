@@ -3,44 +3,50 @@
 #include "shared_data.h"
 #include <Arduino.h>
 
-// Sampling variables for AC RMS calculation
-const int numSamples = 100;
+static const int numSamples = 100;
 
 void TaskCurrent(void * pvParameters) {
+    // Configure ADC: full 3.3V range on the current sensor pin
+    analogSetPinAttenuation(PIN_CURRENT_SENSOR, ADC_11db);
+    analogReadResolution(12);
+
+    // -----------------------------------------------------------------------
+    //  Zero-current calibration
+    //  SSRs are off at boot — average 200 samples to find the actual quiescent
+    //  voltage of this specific sensor (ACS758 tolerance ±1% on VREF).
+    // -----------------------------------------------------------------------
+    Serial.println("[CURRENT] Calibrating zero reference...");
+    float vref_sum = 0;
+    for (int i = 0; i < 200; i++) {
+        float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
+        vref_sum += v_adc / CURRENT_DIVIDER_RATIO;
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+    float vref_actual = vref_sum / 200.0f;
+    Serial.printf("[CURRENT] Calibrated VREF = %.3fV (expected %.3fV)\n",
+                  vref_actual, ACS758_VREF);
+    Serial.println("[CURRENT] Task started");
+
     for(;;) {
         float sumSq = 0;
-        
-        // Sample the ADC quickly to catch the AC wave (50Hz)
+
+        // Sample the ADC to capture AC waveform (50 Hz)
         for (int i = 0; i < numSamples; i++) {
-            // Read ADC (12-bit, 0-4095, 3.3V reference)
-            int adc_raw = analogRead(PIN_CURRENT_SENSOR);
-
-            // Step 1: ADC count → voltage at the ADC pin
-            float v_adc = (adc_raw / 4095.0f) * 3.3f;
-
-            // Step 2: Reverse the hardware voltage divider (1.8kΩ / 3.3kΩ)
-            //         V_sensor = V_adc × (R1+R2)/R2 = V_adc / CURRENT_DIVIDER_RATIO
+            float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
             float v_sensor = v_adc / CURRENT_DIVIDER_RATIO;
-
-            // Step 3: ACS758LCB-050B on 5V — 40mV/A, quiescent at 2.5V
-            float current_instant = (v_sensor - ACS758_VREF) / ACS758_SENSITIVITY;
-            
+            float current_instant = (v_sensor - vref_actual) / ACS758_SENSITIVITY;
             sumSq += (current_instant * current_instant);
-            vTaskDelay(pdMS_TO_TICKS(1)); // 1ms delay between samples
+            vTaskDelay(pdMS_TO_TICKS(1));
         }
-        
-        // Calculate RMS Current
-        float rms_current = sqrt(sumSq / numSamples);
-        
-        // Filter out noise close to 0
-        if (rms_current < 0.2) rms_current = 0.0;
-        
-        // Safely update shared variable (assuming you have a mutex or using FreeRTOS atomic)
-        current_rms = rms_current;
-        
-        // Power calculation (assuming 220V AC)
-        power_watts = current_rms * 220.0;
-        
-        vTaskDelay(pdMS_TO_TICKS(500)); // Run twice a second
+
+        float rms_current = sqrtf(sumSq / numSamples);
+
+        // Filter noise floor
+        if (rms_current < 0.2f) rms_current = 0.0f;
+
+        current_rms  = rms_current;
+        power_watts  = current_rms * 220.0f;
+
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
