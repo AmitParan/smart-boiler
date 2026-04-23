@@ -31,7 +31,7 @@ static const uint32_t RX_TIMEOUT_MS = 200u;
 //  PLC_Init
 // ---------------------------------------------------------------------------
 void PLC_Init() {
-    Serial2.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
+    Serial1.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
     Serial.println("[PLC] Initialised on Serial2 (KQ-330, 9600 baud)");
 }
 
@@ -75,7 +75,7 @@ void PLC_SendStatus() {
     // 2 ms × 17 bytes = 34 ms total — well within the 1-second budget.
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
     for (uint8_t i = 0u; i < (uint8_t)sizeof(pkt); i++) {
-        Serial2.write(raw[i]);
+        Serial1.write(raw[i]);
         delay(2);
     }
 
@@ -101,8 +101,8 @@ bool PLC_ReceivePacket() {
         rx_buf_idx = 0u;
     }
 
-    while (Serial2.available()) {
-        uint8_t b = (uint8_t)Serial2.read();
+    while (Serial1.available()) {
+        uint8_t b = (uint8_t)Serial1.read();
         rx_last_byte_ms = millis();
 
         switch (rx_state) {
