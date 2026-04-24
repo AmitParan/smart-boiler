@@ -25,7 +25,7 @@ static uint8_t   rx_buf[32]      = {};
 static uint8_t   rx_buf_idx      = 0u;
 static uint8_t   rx_expected     = 0u;
 static uint32_t  rx_last_byte_ms = 0u;
-static const uint32_t RX_TIMEOUT_MS = 200u;
+static const uint32_t RX_TIMEOUT_MS = 2000u;  // KQ-330 PLC propagation can be slow
 
 // ---------------------------------------------------------------------------
 //  PLC_Init
@@ -96,7 +96,12 @@ bool PLC_ReceivePacket() {
     // Reset state machine on byte-gap timeout
     if (rx_state != RX_WAIT_START &&
         (millis() - rx_last_byte_ms) > RX_TIMEOUT_MS) {
-        Serial.println("[PLC RX] Timeout — resetting state machine");
+        // Dump whatever arrived so we can diagnose the link
+        Serial.printf("[PLC RX] Timeout — got %u byte(s): ", rx_buf_idx);
+        for (uint8_t i = 0; i < rx_buf_idx; i++) {
+            Serial.printf("0x%02X ", rx_buf[i]);
+        }
+        Serial.println();
         rx_state   = RX_WAIT_START;
         rx_buf_idx = 0u;
     }
