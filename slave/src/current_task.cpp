@@ -6,9 +6,10 @@
 static const int numSamples = 100;
 
 void TaskCurrent(void * pvParameters) {
-    // Configure ADC: full 3.3V range on the current sensor pin
-    analogSetPinAttenuation(PIN_CURRENT_SENSOR, ADC_11db);
+    // Initialize pin as analog first, then set attenuation
     analogReadResolution(12);
+    analogRead(PIN_CURRENT_SENSOR);                              // primes the pin
+    analogSetPinAttenuation(PIN_CURRENT_SENSOR, ADC_11db);
 
     // -----------------------------------------------------------------------
     //  Zero-current calibration
