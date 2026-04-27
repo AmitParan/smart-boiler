@@ -64,9 +64,9 @@ struct Scenario {
 //  11  SAFETY beats SHOWER: overtemp + flow → SAFETY_OVERRIDE
 // ---------------------------------------------------------------------------
 static const Scenario kScenarios[] = {
-    // 1 — SAFETY: PLC disconnected
+    // 1 — SAFETY: PLC disconnected  [MASTER-ONLY — cannot be driven by slave test sender]
     {
-        "SAFETY: PLC lost",
+        "[MASTER-ONLY] SAFETY: PLC lost",
         { 35.0f, 0.0f, 60.0f, true, false },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
@@ -82,9 +82,9 @@ static const Scenario kScenarios[] = {
         { 85.0f, 0.0f, 60.0f, true, true },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
-    // 4 — STATE_OFF
+    // 4 — STATE_OFF  [MASTER-ONLY — UI state, cannot be driven by slave test sender]
     {
-        "STATE_OFF: user pressed OFF",
+        "[MASTER-ONLY] STATE_OFF: user pressed OFF",
         { 35.0f, 0.0f, 60.0f, false, true },
         BoilerState::STATE_OFF, 0, 0
     },
