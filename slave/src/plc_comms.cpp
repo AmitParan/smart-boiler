@@ -25,7 +25,9 @@ static uint8_t   rx_buf[32]      = {};
 static uint8_t   rx_buf_idx      = 0u;
 static uint8_t   rx_expected     = 0u;
 static uint32_t  rx_last_byte_ms = 0u;
-static const uint32_t RX_TIMEOUT_MS = 2000u;  // KQ-330 PLC propagation can be slow
+static uint32_t  rx_channel_free_ms = 0u;  // when channel last went quiet
+static const uint32_t RX_TIMEOUT_MS    = 2000u;
+static const uint32_t TX_QUIET_TIME_MS = 500u;  // wait after last byte before TX
 
 // ---------------------------------------------------------------------------
 //  PLC_Init
@@ -93,7 +95,10 @@ void PLC_SendStatus() {
 //  was updated with the new PWM values and flags.
 // ---------------------------------------------------------------------------
 bool PLC_IsReceiving() {
-    return rx_state != RX_WAIT_START;
+    // Busy if mid-packet OR within quiet time after last byte
+    if (rx_state != RX_WAIT_START) return true;
+    if ((millis() - rx_channel_free_ms) < TX_QUIET_TIME_MS) return true;
+    return false;
 }
 
 bool PLC_ReceivePacket() {
@@ -106,13 +111,15 @@ bool PLC_ReceivePacket() {
             Serial.printf("0x%02X ", rx_buf[i]);
         }
         Serial.println();
+        rx_channel_free_ms = millis();
         rx_state   = RX_WAIT_START;
         rx_buf_idx = 0u;
     }
 
     while (Serial1.available()) {
         uint8_t b = (uint8_t)Serial1.read();
-        rx_last_byte_ms = millis();
+        rx_last_byte_ms    = millis();
+        rx_channel_free_ms = millis();  // channel busy as long as bytes arrive
 
         switch (rx_state) {
 
@@ -202,6 +209,7 @@ bool PLC_ReceivePacket() {
 
                             rx_state   = RX_WAIT_START;
                             rx_buf_idx = 0u;
+                            rx_channel_free_ms = millis();
                             return true;
 
                         } else {
