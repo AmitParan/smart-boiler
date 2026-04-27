@@ -221,17 +221,31 @@ static bool receivePacket() {
 // ---------------------------------------------------------------------------
 void TaskMasterComms(void* pvParameters) {
     Serial1.begin(9600, SERIAL_8N1, MASTER_RX_PIN, MASTER_TX_PIN);
-    Serial.println("[COMMS] Master comms task started (binary PLC protocol)");
+    Serial.printf("[COMMS] Master comms task started (RX=GPIO%d TX=GPIO%d)\n",
+                  MASTER_RX_PIN, MASTER_TX_PIN);
 
-    // Start offset: wait 500 ms so our CMD falls between slave STATUS packets
-    unsigned long last_cmd_ms = millis() - 500UL;
+    unsigned long last_cmd_ms = millis();
 
     for (;;) {
-        receivePacket();
-
         if (millis() - last_cmd_ms >= 1000UL) {
             last_cmd_ms = millis();
+
+            // 1. Send CMD
             sendCommand();
+
+            // 2. Wait up to 3000ms for STATUS response
+            unsigned long wait_start = millis();
+            bool got_status = false;
+            while (millis() - wait_start < 3000UL) {
+                if (receivePacket()) {
+                    got_status = true;
+                    break;
+                }
+                vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            if (!got_status) {
+                Serial.println("[COMMS] No STATUS received within 3s");
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(10));
