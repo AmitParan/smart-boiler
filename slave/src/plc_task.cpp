@@ -6,17 +6,14 @@ void TaskPLC(void* pvParameters) {
     PLC_Init();
     Serial.println("[PLC] Task started");
 
-    unsigned long last_send_ms = 0UL;
-
     for (;;) {
-        // Non-blocking receive — process any incoming CMD bytes
-        PLC_ReceivePacket();
-
-        // Send status once per second — but NOT while mid-reception.
-        // KQ-330 is half-duplex: transmitting during reception loses incoming bytes.
-        unsigned long now = millis();
-        if (now - last_send_ms >= STATUS_SEND_INTERVAL_MS && !PLC_IsReceiving()) {
-            last_send_ms = now;
+        // Request-response protocol:
+        // Slave ONLY transmits STATUS after receiving a CMD from master.
+        // This eliminates half-duplex collisions entirely.
+        bool cmd_received = PLC_ReceivePacket();
+        if (cmd_received) {
+            // Small guard delay — let KQ-330 finish receiving before we TX
+            vTaskDelay(pdMS_TO_TICKS(200));
             PLC_SendStatus();
         }
 
