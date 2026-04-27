@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "ui_manager.h"
 #include "DataManager.h"
+#include "SystemManagerTest.h"
 #include <WiFi.h>
 #include <time.h>
 
@@ -11,7 +12,14 @@ extern void TaskMasterComms(void * pvParameters);
 //  DEMO TASK — simulates slave data so the UI can be tested without hardware
 //  Set DEMO_MODE to 0 to disable when real slave is connected
 // ---------------------------------------------------------------------------
-#define DEMO_MODE 1
+#define DEMO_MODE 0
+
+// ---------------------------------------------------------------------------
+//  TEST MODE — runs SystemManager test bench, no slave needed
+//  Set TEST_MODE 1 to verify state machine logic via serial monitor.
+//  DEMO_MODE and TEST_MODE are mutually exclusive; TEST_MODE takes priority.
+// ---------------------------------------------------------------------------
+#define TEST_MODE 0
 
 #if DEMO_MODE
 static void TaskDemoData(void* pvParameters) {
@@ -50,7 +58,7 @@ static void TaskDemoData(void* pvParameters) {
                 break;
         }
 
-        UI_UpdateSensorData(t_internal, t_boost, flow);
+        UI_UpdateSensorData(t_internal, t_boost, flow, 0.0f);
         Serial.printf("[DEMO] t1=%.1f t2=%.1f flow=%.1f phase=%d\n",
                       t_internal, t_boost, flow, phase);
         vTaskDelay(pdMS_TO_TICKS(1000));
@@ -174,8 +182,11 @@ void setup() {
         startSetupAccessPoint();
     }
 
-    // 3. Start communication task (real slave) OR demo task
-#if DEMO_MODE
+    // 3. Start communication task, demo task, or SystemManager test bench
+#if TEST_MODE
+    Serial.println("[TEST MODE] Starting SystemManager test bench");
+    xTaskCreatePinnedToCore(TaskSystemManagerTest, "SMTest", 4096, NULL, 1, NULL, 1);
+#elif DEMO_MODE
     Serial.println("[DEMO MODE] Starting demo data task instead of real comms");
     xTaskCreatePinnedToCore(TaskDemoData, "DemoData", 4096, NULL, 1, NULL, 1);
 #else
