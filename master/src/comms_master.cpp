@@ -29,9 +29,10 @@ static const uint32_t RX_TIMEOUT_MS = 200u;
 static uint8_t   tx_seq          = 0u;
 static uint8_t   last_rx_seq     = 0xFFu;
 
-// Last received sensor values — used for the proportional PWM calculation
+// Last received sensor values (cached for sendCommand log)
 static float last_t_internal = 0.0f;
 static float last_flow       = 0.0f;
+static float last_power_w    = 0.0f;
 
 // ---------------------------------------------------------------------------
 //  processStatusPacket
@@ -58,19 +59,14 @@ static void processStatusPacket(const uint8_t* raw) {
     float flow        = pkt->flowRate      / 10.0f;
     float power_w     = (float)pkt->powerWatts;
 
-    // Cache for PWM calculation in sendCommand()
+    // Cache for the combined log line in sendCommand()
     last_t_internal = t_internal;
     last_flow       = flow;
+    last_power_w    = power_w;
 
     // Update the LVGL UI (function is LVGL-lock safe)
     UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
     UI_UpdatePLCStatus(true);
-
-    Serial.printf("[COMMS RX] STATUS seq=%u t1=%.1f t2=%.1f t3=%.1f "
-                  "flow=%.1f pwr=%uW status=0x%02X\n",
-                  pkt->sequence,
-                  t_internal, t_boiler, t_boost,
-                  flow, (unsigned)pkt->powerWatts, pkt->statusByte);
 }
 
 // ---------------------------------------------------------------------------
@@ -112,8 +108,13 @@ static void sendCommand() {
         delay(2);
     }
 
-    Serial.printf("[COMMS TX] CMD seq=%u pwmInt=%u pwmBst=%u state=%s\n",
-                  pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, cmd.stateLabel);
+    // One combined line per cycle — same field order as slave [TEST TX], then master decision
+    if (last_rx_seq != 0xFFu) {
+        Serial.printf("[MASTER] seq=%u  tInt=%.1f flow=%.1f pwr=%.0fW  ->  pwmInt=%u%% pwmBst=%u%% [%s]\n",
+                      pkt.sequence,
+                      last_t_internal, last_flow, last_power_w,
+                      pkt.pwmInternal, pkt.pwmBoost, cmd.stateLabel);
+    }
 }
 
 // ---------------------------------------------------------------------------
