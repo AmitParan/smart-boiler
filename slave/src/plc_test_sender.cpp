@@ -21,18 +21,21 @@
 //
 //  ENABLE:  #define SLAVE_TEST_MODE 1  in slave/src/main.cpp
 //
-//  Scenario table:
-//  #   tempInternal  flow     Intended master state
-//  --  ------------  -------  ---------------------
-//   1  20.0 °C       0.0      STATE_HEATING_TANK  (cold start)
-//   2  39.0 °C       0.0      STATE_HEATING_TANK  (near base temp)
-//   3  40.0 °C       0.0      STATE_STANDBY       (at base temp)
-//   4  55.0 °C       0.0      STATE_STANDBY       (above base temp)
-//   5  40.0 °C       7.5      STATE_SHOWER_BOOST  (tap open, warm tank)
-//   6  20.0 °C       7.5      STATE_SHOWER_BOOST  (tap open, cold tank)
-//   7  86.0 °C       0.0      SAFETY_OVERRIDE     (overtemp)
-//   8  85.0 °C       0.0      SAFETY_OVERRIDE     (boundary)
-//   9  86.0 °C       7.5      SAFETY_OVERRIDE     (overtemp + flow)
+//  Scenario table (9 sensor-driven scenarios, matching master TEST_MODE #2,3,5-11):
+//  Master scenarios #1 (PLC lost) and #4 (STATE_OFF) CANNOT be driven here —
+//  they are master-side states, not sensor values. Test those with TEST_MODE only.
+//
+//  Slave#  Master#  tempInternal  flow     Expected master state
+//  ------  -------  ------------  -------  ---------------------
+//    1       2      86.0 °C       0.0      SAFETY_OVERRIDE  (overtemp)
+//    2       3      85.0 °C       0.0      SAFETY_OVERRIDE  (boundary 85.0)
+//    3       5      20.0 °C       0.0      STATE_HEATING_TANK  (cold start)
+//    4       6      39.0 °C       0.0      STATE_HEATING_TANK  (near base)
+//    5       7      40.0 °C       0.0      STATE_STANDBY  (at base temp)
+//    6       8      55.0 °C       0.0      STATE_STANDBY  (above base)
+//    7       9      20.0 °C       7.5      STATE_SHOWER_BOOST (cold tank)
+//    8      10      40.0 °C       7.5      STATE_SHOWER_BOOST (warm tank)
+//    9      11      86.0 °C       7.5      SAFETY_OVERRIDE  (overtemp + flow)
 // ===========================================================================
 
 static constexpr uint32_t SCENARIO_HOLD_S = 10u;   // seconds per scenario
@@ -46,17 +49,18 @@ struct SlaveTestScenario {
     float       power;          // W  (simulated)
 };
 
+// Scenarios ordered to match master TEST_MODE #2,3,5,6,7,8,9,10,11
 static const SlaveTestScenario kSlaveScenarios[] = {
-    // name                               tInt   tBoil  tBst   flow   pwr
-    { "HEATING_TANK cold start",          20.0f, 18.0f, 18.0f, 0.0f,  0.0f   },
-    { "HEATING_TANK near base (39 degC)", 39.0f, 38.0f, 38.0f, 0.0f,  2000.0f},
-    { "STANDBY at base temp (40 degC)",   40.0f, 39.0f, 39.0f, 0.0f,  0.0f   },
-    { "STANDBY above base (55 degC)",     55.0f, 53.0f, 53.0f, 0.0f,  0.0f   },
-    { "SHOWER_BOOST warm tank + flow",    40.0f, 39.0f, 55.0f, 7.5f,  3000.0f},
-    { "SHOWER_BOOST cold tank + flow",    20.0f, 18.0f, 45.0f, 7.5f,  3000.0f},
-    { "SAFETY overtemp (86 degC)",        86.0f, 84.0f, 80.0f, 0.0f,  0.0f   },
-    { "SAFETY boundary (85 degC)",        85.0f, 83.0f, 79.0f, 0.0f,  0.0f   },
-    { "SAFETY overtemp + flow",           86.0f, 84.0f, 80.0f, 7.5f,  0.0f   },
+    // name (Master#)                                tInt   tBoil  tBst   flow   pwr
+    { "[M#02] SAFETY: Overtemp (86 degC)",          86.0f, 84.0f, 80.0f, 0.0f,  0.0f   },
+    { "[M#03] SAFETY: Overtemp boundary (85 degC)", 85.0f, 83.0f, 79.0f, 0.0f,  0.0f   },
+    { "[M#05] STATE_HEATING_TANK: cold (20 degC)",  20.0f, 18.0f, 18.0f, 0.0f,  2000.0f},
+    { "[M#06] STATE_HEATING_TANK: near base (39)",  39.0f, 38.0f, 38.0f, 0.0f,  2000.0f},
+    { "[M#07] STATE_STANDBY: at base (40 degC)",    40.0f, 39.0f, 39.0f, 0.0f,  0.0f   },
+    { "[M#08] STATE_STANDBY: above base (55 degC)", 55.0f, 53.0f, 53.0f, 0.0f,  0.0f   },
+    { "[M#09] STATE_SHOWER_BOOST: cold+flow",       20.0f, 18.0f, 45.0f, 7.5f,  3000.0f},
+    { "[M#10] STATE_SHOWER_BOOST: warm+flow",       40.0f, 39.0f, 55.0f, 7.5f,  3000.0f},
+    { "[M#11] SAFETY beats SHOWER_BOOST",           86.0f, 84.0f, 80.0f, 7.5f,  0.0f   },
 };
 
 static constexpr uint8_t kSlaveNumScenarios =
