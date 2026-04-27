@@ -92,6 +92,10 @@ void PLC_SendStatus() {
 //  Returns true if a valid BoilerCmdPacket_t was received and shared_data
 //  was updated with the new PWM values and flags.
 // ---------------------------------------------------------------------------
+bool PLC_IsReceiving() {
+    return rx_state != RX_WAIT_START;
+}
+
 bool PLC_ReceivePacket() {
     // Reset state machine on byte-gap timeout
     if (rx_state != RX_WAIT_START &&
