@@ -38,105 +38,96 @@ struct Scenario {
     const char*    name;
     SystemInputs   in;
     BoilerState    expectedState;
-    uint8_t        expectedPwmInternal; // 0–100, or 0xFF = "any non-zero"
-    uint8_t        expectedPwmBoost;    // 0–100, or 0xFF = "any non-zero"
+    uint8_t        expectedPwmInternal;  // exact value, or 0xFF = "any non-zero"
+    uint8_t        expectedPwmBoost;     // exact value, or 0xFF = "any non-zero"
 };
 
 // ---------------------------------------------------------------------------
-//  Scenario table — every state + every boundary case
+//  Scenario table  (10 scenarios, every state + every boundary)
 //
-//  ID  Name                           Notes
-//  --  ----                           -----
-//   1  SAFETY: PLC lost               plcConnected=false — must cut all power
-//   2  SAFETY: Overtemp               temp=86 >= 85 cutoff — must cut all power
-//   3  SAFETY: Overtemp at boundary   temp=85.0 exactly — still trips
-//   4  OFF: user pressed OFF          uiStateOn=false — must cut all power
-//   5  HEATING: full power            delta=20°C >= 5°C window → 100%
-//   6  HEATING: proportional 60%      delta=3°C inside window → ~60%
-//   7  HEATING: proportional 1%       delta=0.05°C — nearly at target
-//   8  STANDBY: tank at target        temp==target, no flow → all off
-//   9  STANDBY: tank above target     temp > target, no flow → all off
-//  10  BOOST: flow active, cold tank  pwmBoost=100, pwmInternal=100 (delta large)
-//  11  BOOST: flow active, warm tank  pwmBoost=100, pwmInternal proportional
-//  12  BOOST: flow active, hot tank   pwmBoost=100, pwmInternal=0 (already hot)
-//  13  SAFETY beats ON+flow           overtemp + flow — safety must win
+//  SystemInputs layout: { currentTemp, flowRateLPM, targetShowerTemp, uiStateOn, plcConnected }
+//  TARGET_TANK_TEMP = 40.0 °C  (hardcoded in SystemManager)
+//
+//  ID  Description
+//  --  -----------
+//   1  SAFETY: PLC lost                 → SAFETY_OVERRIDE, both=0
+//   2  SAFETY: Overtemp 86 °C           → SAFETY_OVERRIDE, both=0
+//   3  SAFETY: Overtemp boundary 85 °C  → SAFETY_OVERRIDE, both=0
+//   4  OFF: user pressed OFF             → STATE_OFF, both=0
+//   5  HEATING: cold tank (20 °C < 40)  → STATE_HEATING_TANK, int=100, bst=0
+//   6  HEATING: just below base (39 °C) → STATE_HEATING_TANK, int=100, bst=0
+//   7  STANDBY: tank exactly at base (40°C) → STATE_STANDBY, both=0
+//   8  STANDBY: tank above base (55 °C) → STATE_STANDBY, both=0
+//   9  SHOWER BOOST: flow=7.5, cold tank → STATE_SHOWER_BOOST, int=0, bst=100
+//  10  SHOWER BOOST: flow=7.5, warm tank → STATE_SHOWER_BOOST, int=0, bst=100
+//      (internal must be 0 even if tank is cold — breaker protection)
+//  11  SAFETY beats SHOWER: overtemp + flow → SAFETY_OVERRIDE
 // ---------------------------------------------------------------------------
 static const Scenario kScenarios[] = {
     // 1 — SAFETY: PLC disconnected
     {
         "SAFETY: PLC lost",
-        { 40.0f, 0.0f, 60.0f, true, false },
+        { 35.0f, 0.0f, 60.0f, true, false },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
-    // 2 — SAFETY: overtemp (above cutoff)
+    // 2 — SAFETY: overtemp above cutoff
     {
         "SAFETY: Overtemp (86 degC)",
         { 86.0f, 0.0f, 60.0f, true, true },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
-    // 3 — SAFETY: overtemp exactly at cutoff (85.0)
+    // 3 — SAFETY: overtemp exactly at cutoff (>=85 trips)
     {
-        "SAFETY: Overtemp (85.0 degC boundary)",
+        "SAFETY: Overtemp boundary (85.0 degC)",
         { 85.0f, 0.0f, 60.0f, true, true },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
-    // 4 — STATE_OFF: user turned boiler off
+    // 4 — STATE_OFF
     {
-        "STATE_OFF: uiStateOn=false",
-        { 40.0f, 0.0f, 60.0f, false, true },
+        "STATE_OFF: user pressed OFF",
+        { 35.0f, 0.0f, 60.0f, false, true },
         BoilerState::STATE_OFF, 0, 0
     },
-    // 5 — STATE_HEATING: full power (delta 20°C, well outside proportional window)
+    // 5 — STATE_HEATING_TANK: cold tank (20 °C), no flow
     {
-        "STATE_HEATING: full power (delta=20 degC)",
+        "STATE_HEATING_TANK: cold start (20 degC < 40 base)",
+        { 20.0f, 0.0f, 60.0f, true, true },
+        BoilerState::STATE_HEATING_TANK, 100, 0
+    },
+    // 6 — STATE_HEATING_TANK: just below base temp (39 °C)
+    {
+        "STATE_HEATING_TANK: near base temp (39 degC)",
+        { 39.0f, 0.0f, 60.0f, true, true },
+        BoilerState::STATE_HEATING_TANK, 100, 0
+    },
+    // 7 — STATE_STANDBY: tank exactly at base temp
+    {
+        "STATE_STANDBY: tank at base temp (40 degC)",
         { 40.0f, 0.0f, 60.0f, true, true },
-        BoilerState::STATE_HEATING, 100, 0
-    },
-    // 6 — STATE_HEATING: proportional, delta=3°C (inside 5°C window → ~60%)
-    {
-        "STATE_HEATING: proportional ~60% (delta=3 degC)",
-        { 57.0f, 0.0f, 60.0f, true, true },
-        BoilerState::STATE_HEATING, 0xFF, 0  // 0xFF = any non-zero
-    },
-    // 7 — STATE_HEATING: delta=0.25°C → ~5%
-    {
-        "STATE_HEATING: near target ~5% (delta=0.25 degC)",
-        { 59.75f, 0.0f, 60.0f, true, true },
-        BoilerState::STATE_HEATING, 0xFF, 0
-    },
-    // 8 — STATE_STANDBY: temp exactly at target
-    {
-        "STATE_STANDBY: temp==target (60 degC)",
-        { 60.0f, 0.0f, 60.0f, true, true },
         BoilerState::STATE_STANDBY, 0, 0
     },
-    // 9 — STATE_STANDBY: tank above target
+    // 8 — STATE_STANDBY: tank warmer than base (e.g. residual heat)
     {
-        "STATE_STANDBY: temp above target (65 degC)",
-        { 65.0f, 0.0f, 60.0f, true, true },
+        "STATE_STANDBY: tank above base temp (55 degC)",
+        { 55.0f, 0.0f, 60.0f, true, true },
         BoilerState::STATE_STANDBY, 0, 0
     },
-    // 10 — STATE_BOOST: flow active, cold tank → both heaters running
+    // 9 — STATE_SHOWER_BOOST: tap open, cold tank
+    //     internal MUST be 0 even though tank is cold (breaker protection rule)
     {
-        "STATE_BOOST: cold tank + flow=7.5 L/min",
+        "STATE_SHOWER_BOOST: flow=7.5 L/min, cold tank (20 degC)",
+        { 20.0f, 7.5f, 60.0f, true, true },
+        BoilerState::STATE_SHOWER_BOOST, 0, 100
+    },
+    // 10 — STATE_SHOWER_BOOST: tap open, warm tank
+    {
+        "STATE_SHOWER_BOOST: flow=7.5 L/min, warm tank (40 degC)",
         { 40.0f, 7.5f, 60.0f, true, true },
-        BoilerState::STATE_BOOST, 100, 100
+        BoilerState::STATE_SHOWER_BOOST, 0, 100
     },
-    // 11 — STATE_BOOST: flow active, warm tank (inside proportional window)
+    // 11 — SAFETY beats SHOWER_BOOST: overtemp + flow
     {
-        "STATE_BOOST: warm tank + flow=7.5 L/min (delta=3 degC)",
-        { 57.0f, 7.5f, 60.0f, true, true },
-        BoilerState::STATE_BOOST, 0xFF, 100  // pwmInternal proportional, pwmBoost=100
-    },
-    // 12 — STATE_BOOST: flow active, tank already hot → boost=100, internal=0
-    {
-        "STATE_BOOST: hot tank + flow=7.5 L/min (temp>=target)",
-        { 62.0f, 7.5f, 60.0f, true, true },
-        BoilerState::STATE_BOOST, 0, 100
-    },
-    // 13 — SAFETY beats everything: overtemp + flow + uiOn → must be SAFETY
-    {
-        "SAFETY beats BOOST: overtemp + flow active",
+        "SAFETY beats SHOWER_BOOST: overtemp + flow",
         { 86.0f, 7.5f, 60.0f, true, true },
         BoilerState::SAFETY_OVERRIDE, 0, 0
     },
@@ -154,7 +145,6 @@ static void printSeparator() {
 
 static void printResult(uint8_t idx, const Scenario& s,
                         const SystemCommand& cmd) {
-    // Determine pass/fail
     bool stateOk = (cmd.state == s.expectedState);
     bool intOk   = (s.expectedPwmInternal == 0xFF)
                    ? (cmd.pwmInternal > 0)
@@ -167,19 +157,20 @@ static void printResult(uint8_t idx, const Scenario& s,
     printSeparator();
     Serial.printf("[TEST %2u/%u] %s\n", idx + 1, kNumScenarios, s.name);
     printSeparator();
-    Serial.printf("  INPUT  currentTemp  : %5.2f degC\n",   s.in.currentTemp);
-    Serial.printf("  INPUT  flowRateLPM  : %5.2f L/min\n",  s.in.flowRateLPM);
-    Serial.printf("  INPUT  targetTemp   : %5.2f degC\n",   s.in.targetTemp);
-    Serial.printf("  INPUT  uiStateOn    : %s\n",           s.in.uiStateOn    ? "ON"  : "OFF");
-    Serial.printf("  INPUT  plcConnected : %s\n",           s.in.plcConnected ? "YES" : "NO");
+    Serial.printf("  INPUT  currentTemp      : %5.1f degC\n",  s.in.currentTemp);
+    Serial.printf("  INPUT  flowRateLPM      : %5.1f L/min\n", s.in.flowRateLPM);
+    Serial.printf("  INPUT  targetShowerTemp : %5.1f degC\n",  s.in.targetShowerTemp);
+    Serial.printf("  INPUT  uiStateOn        : %s\n",          s.in.uiStateOn    ? "ON"  : "OFF");
+    Serial.printf("  INPUT  plcConnected     : %s\n",          s.in.plcConnected ? "YES" : "NO");
+    Serial.printf("  (base tank target hardcoded: %.1f degC)\n", TARGET_TANK_TEMP);
     Serial.println("  ------------------------------------------------------------");
     Serial.printf("  OUTPUT pwmInternal  : %3u %%\n",  cmd.pwmInternal);
     Serial.printf("  OUTPUT pwmBoost     : %3u %%\n",  cmd.pwmBoost);
-    Serial.printf("  OUTPUT state        : %-20s  %s\n",
+    Serial.printf("  OUTPUT state        : %-22s  %s\n",
                   cmd.stateLabel, pass ? "PASS" : "*** FAIL ***");
 
     if (!stateOk)
-        Serial.printf("         EXPECTED state : %s\n",
+        Serial.printf("         EXPECTED state       : %s\n",
                       SystemManager::labelFor(s.expectedState));
     if (!intOk)
         Serial.printf("         EXPECTED pwmInternal : %s\n",
@@ -221,7 +212,7 @@ void TaskSystemManagerTest(void* pvParameters) {
 
             printResult(i, s, cmd);
 
-            // Mirror current scenario to the UI so you can watch the screen
+            // Mirror current scenario to the UI
             UI_UpdateSensorData(s.in.currentTemp, 0.0f,
                                 s.in.flowRateLPM, 0.0f);
             UI_UpdatePLCStatus(s.in.plcConnected);

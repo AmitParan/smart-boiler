@@ -5,50 +5,41 @@
 // ===========================================================================
 const char* SystemManager::labelFor(BoilerState state) {
     switch (state) {
-        case BoilerState::SAFETY_OVERRIDE: return "SAFETY_OVERRIDE";
-        case BoilerState::STATE_OFF:       return "STATE_OFF";
-        case BoilerState::STATE_BOOST:     return "STATE_BOOST";
-        case BoilerState::STATE_HEATING:   return "STATE_HEATING";
-        case BoilerState::STATE_STANDBY:   return "STATE_STANDBY";
-        default:                           return "UNKNOWN";
+        case BoilerState::SAFETY_OVERRIDE:   return "SAFETY_OVERRIDE";
+        case BoilerState::STATE_OFF:         return "STATE_OFF";
+        case BoilerState::STATE_SHOWER_BOOST: return "STATE_SHOWER_BOOST";
+        case BoilerState::STATE_HEATING_TANK: return "STATE_HEATING_TANK";
+        case BoilerState::STATE_STANDBY:     return "STATE_STANDBY";
+        default:                             return "UNKNOWN";
     }
-}
-
-// ===========================================================================
-//  SystemManager::proportionalPWM  (private)
-//
-//  Linear ramp across PROP_WINDOW_C degrees:
-//    delta <= 0              → 0
-//    0 < delta < PROP_WINDOW → (delta / PROP_WINDOW) * PWM_MAX
-//    delta >= PROP_WINDOW    → PWM_MAX  (full power)
-// ===========================================================================
-uint8_t SystemManager::proportionalPWM(float currentTemp, float targetTemp) {
-    float delta = targetTemp - currentTemp;
-    if (delta <= 0.0f)               return PWM_OFF;
-    if (delta >= PROP_WINDOW_C)      return PWM_MAX;
-    return static_cast<uint8_t>((delta / PROP_WINDOW_C) * static_cast<float>(PWM_MAX));
 }
 
 // ===========================================================================
 //  SystemManager::process
 //
-//  Priority order (evaluated top to bottom — first match wins):
+//  Dual-target energy-saving logic:
 //
-//  1. SAFETY_OVERRIDE : !plcConnected  OR  currentTemp >= TEMP_CUTOFF_C
-//  2. STATE_OFF       : !uiStateOn
-//  3. STATE_BOOST     : flowRateLPM > FLOW_THRESHOLD_LPM
-//                       → pwmBoost = PWM_MAX
-//                       → pwmInternal = proportional (heat while water runs)
-//  4. STATE_HEATING   : currentTemp < targetTemp
-//                       → pwmInternal = proportional, pwmBoost = 0
-//  5. STATE_STANDBY   : currentTemp >= targetTemp
-//                       → both = 0
+//  Priority  State               Condition
+//  --------  ------------------  -----------------------------------------
+//  1 (HIGH)  SAFETY_OVERRIDE     !plcConnected  OR  currentTemp >= 85 °C
+//  2         STATE_OFF           !uiStateOn
+//  3         STATE_SHOWER_BOOST  flowRateLPM > 0.5  →  boost=100, internal=0
+//  4         STATE_HEATING_TANK  no flow AND currentTemp < TARGET_TANK_TEMP
+//                                →  internal=100, boost=0
+//  5 (LOW)   STATE_STANDBY       no flow AND currentTemp >= TARGET_TANK_TEMP
+//                                →  both=0  (waiting for next shower)
+//
+//  Key design decisions:
+//  - Internal heater targets 40 °C only, not shower temp → less standing loss
+//  - Both heaters are NEVER on simultaneously (breaker protection)
+//  - Boost heater is binary (0 or 100) — it is always working at full power
+//    to bridge the temperature gap quickly while water is flowing
 // ===========================================================================
 SystemCommand SystemManager::process(const SystemInputs& in) const {
     SystemCommand cmd{};
 
     // ------------------------------------------------------------------
-    // 1. SAFETY OVERRIDE — hard fail-safe, no further evaluation
+    // 1. SAFETY OVERRIDE
     // ------------------------------------------------------------------
     if (!in.plcConnected || in.currentTemp >= TEMP_CUTOFF_C) {
         cmd.pwmInternal = PWM_OFF;
@@ -59,7 +50,7 @@ SystemCommand SystemManager::process(const SystemInputs& in) const {
     }
 
     // ------------------------------------------------------------------
-    // 2. STATE_OFF — user switched boiler off
+    // 2. OFF — user pressed the power button
     // ------------------------------------------------------------------
     if (!in.uiStateOn) {
         cmd.pwmInternal = PWM_OFF;
@@ -70,31 +61,32 @@ SystemCommand SystemManager::process(const SystemInputs& in) const {
     }
 
     // ------------------------------------------------------------------
-    // 3. STATE_BOOST — water is actively flowing
-    //    Boost heater runs at full power.
-    //    Internal heater runs proportionally so the tank stays hot.
+    // 3. SHOWER BOOST — tap is open
+    //    Boost heater bridges tank temp → desired shower temp.
+    //    Internal heater OFF: prevent simultaneous >6 kW draw on 16 A circuit.
     // ------------------------------------------------------------------
     if (in.flowRateLPM > FLOW_THRESHOLD_LPM) {
+        cmd.pwmInternal = PWM_OFF;
         cmd.pwmBoost    = PWM_MAX;
-        cmd.pwmInternal = proportionalPWM(in.currentTemp, in.targetTemp);
-        cmd.state       = BoilerState::STATE_BOOST;
+        cmd.state       = BoilerState::STATE_SHOWER_BOOST;
         cmd.stateLabel  = labelFor(cmd.state);
         return cmd;
     }
 
     // ------------------------------------------------------------------
-    // 4. STATE_HEATING — tank below target, no flow
+    // 4. HEATING TANK — no flow, tank below energy-saving base temp
+    //    Internal heater brings tank up to TARGET_TANK_TEMP (40 °C).
     // ------------------------------------------------------------------
-    if (in.currentTemp < in.targetTemp) {
-        cmd.pwmInternal = proportionalPWM(in.currentTemp, in.targetTemp);
+    if (in.currentTemp < TARGET_TANK_TEMP) {
+        cmd.pwmInternal = PWM_MAX;
         cmd.pwmBoost    = PWM_OFF;
-        cmd.state       = BoilerState::STATE_HEATING;
+        cmd.state       = BoilerState::STATE_HEATING_TANK;
         cmd.stateLabel  = labelFor(cmd.state);
         return cmd;
     }
 
     // ------------------------------------------------------------------
-    // 5. STATE_STANDBY — tank at or above target, no flow
+    // 5. STANDBY — tank warm, no flow, waiting for next shower
     // ------------------------------------------------------------------
     cmd.pwmInternal = PWM_OFF;
     cmd.pwmBoost    = PWM_OFF;
@@ -102,3 +94,4 @@ SystemCommand SystemManager::process(const SystemInputs& in) const {
     cmd.stateLabel  = labelFor(cmd.state);
     return cmd;
 }
+

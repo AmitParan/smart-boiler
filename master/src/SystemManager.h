@@ -4,63 +4,73 @@
 #include <stdint.h>
 
 // ===========================================================================
-//  SystemManager — Core State Machine for the Smart Boiler Master Unit
+//  SystemManager — Dual-Target Energy-Saving State Machine
 //
-//  Evaluates sensor inputs and UI settings, then calculates PWM duty cycles
-//  for the two SSR relays on the Slave unit.
+//  PHILOSOPHY:
+//    Two heaters serve two separate jobs:
 //
-//  PWM output range: 0–100  (percentage)
-//  Matches BoilerCmdPacket_t::pwmInternal/pwmBoost wire encoding.
-//  The slave uses this as a time-proportion percentage: 50 → ON 500ms/OFF 500ms
-//  per 1-second cycle.  Do NOT use 0-255 — SSRs are not hardware-PWM devices.
+//    INTERNAL heater (main tank, 150 L):
+//      Keeps bulk water at a LOW base temperature (TARGET_TANK_TEMP, ~40 °C).
+//      Running continuously at 40 °C vs 60 °C cuts standing heat loss ~60 %.
+//
+//    EXTERNAL boost heater (inline, instant-on):
+//      Only fires when the tap is open.  Bridges the gap from 40 °C → shower
+//      temperature (targetShowerTemp, user-set on UI, e.g. 60 °C).
+//      Energy spent only on water the user is *actually consuming*.
+//
+//    NEVER both on simultaneously — prevents tripping a 16 A house breaker
+//    when each element is 3000 W+.
+//
+//  PWM range: 0–100  (percentage, matches BoilerCmdPacket_t wire encoding)
+//  Slave converts: on_ms = pwm% * 10  within a 1-second SSR cycle.
 //
 //  State priority (highest → lowest):
-//    SAFETY_OVERRIDE  — plcConnected==false OR currentTemp >= TEMP_CUTOFF_C
-//    STATE_OFF        — uiStateOn==false
-//    STATE_BOOST      — flow > FLOW_THRESHOLD_LPM  (boost + proportional heat)
-//    STATE_HEATING    — no flow AND currentTemp < targetTemp
-//    STATE_STANDBY    — no flow AND currentTemp >= targetTemp
+//    SAFETY_OVERRIDE   — PLC lost OR currentTemp >= 85 °C
+//    STATE_OFF         — user switched boiler OFF
+//    STATE_SHOWER_BOOST — tap open (flow > 0.5 L/min) → boost only
+//    STATE_HEATING_TANK — no flow, tank below base temp → internal only
+//    STATE_STANDBY     — no flow, tank warm enough → all off, waiting
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
 //  Constants
 // ---------------------------------------------------------------------------
-static constexpr float TEMP_CUTOFF_C      = 85.0f;  ///< Hard safety trip
-static constexpr float FLOW_THRESHOLD_LPM =  0.5f;  ///< Min flow for boost
-static constexpr float PROP_WINDOW_C      =  5.0f;  ///< Proportional band (°C)
-static constexpr uint8_t PWM_MAX          = 100u;  ///< 100 % — matches wire protocol
-static constexpr uint8_t PWM_OFF          =   0u;
+static constexpr float   TEMP_CUTOFF_C      = 85.0f;  ///< Hard safety trip
+static constexpr float   FLOW_THRESHOLD_LPM =  0.5f;  ///< Min flow to trigger boost
+static constexpr float   TARGET_TANK_TEMP   = 40.0f;  ///< Base tank temp (energy-saving)
+static constexpr uint8_t PWM_MAX            = 100u;   ///< 100 % on the wire
+static constexpr uint8_t PWM_OFF            =   0u;
 
 // ---------------------------------------------------------------------------
-//  BoilerState — textual state for logging / UI display
+//  BoilerState
 // ---------------------------------------------------------------------------
 enum class BoilerState : uint8_t {
-    SAFETY_OVERRIDE = 0,  ///< Hardware/comms protection — all heat cut
-    STATE_OFF,            ///< User set boiler OFF
-    STATE_BOOST,          ///< Water flowing — boost heater active
-    STATE_HEATING,        ///< Tank below target — internal heater active
-    STATE_STANDBY,        ///< Tank at target, no flow — heaters idle
+    SAFETY_OVERRIDE   = 0,  ///< Fail-safe — all heat cut
+    STATE_OFF,              ///< User pressed OFF
+    STATE_SHOWER_BOOST,     ///< Tap open — boost heater bridges tank→shower temp
+    STATE_HEATING_TANK,     ///< No flow — internal heater warming tank to base temp
+    STATE_STANDBY,          ///< No flow, tank warm — waiting for next shower
 };
 
 // ---------------------------------------------------------------------------
-//  SystemInputs — snapshot of all inputs to the state machine
+//  SystemInputs
 // ---------------------------------------------------------------------------
 struct SystemInputs {
-    float currentTemp;    ///< Tank water temperature [°C]  (tempInternal)
-    float flowRateLPM;    ///< Flow rate [L/min]
-    float targetTemp;     ///< User-set target temperature [°C]
-    bool  uiStateOn;      ///< true = boiler ON  (power button)
-    bool  plcConnected;   ///< true = valid STATUS received within 3 s
+    float currentTemp;      ///< Tank water temperature [°C]  (tempInternal from slave)
+    float flowRateLPM;      ///< Flow rate [L/min]
+    float targetShowerTemp; ///< User-set desired shower temperature [°C]
+    bool  uiStateOn;        ///< true = boiler ON (power button on touchscreen)
+    bool  plcConnected;     ///< true = valid STATUS received within 3 s
 };
 
 // ---------------------------------------------------------------------------
-//  SystemCommand — output of the state machine
+//  SystemCommand
 // ---------------------------------------------------------------------------
 struct SystemCommand {
-    uint8_t    pwmInternal;   ///< Duty cycle for internal tank heater [0–100 %]
-    uint8_t    pwmBoost;      ///< Duty cycle for boost inline heater   [0–100 %]
-    BoilerState state;        ///< Current machine state
-    const char* stateLabel;  ///< Human-readable label (static string, safe to log)
+    uint8_t     pwmInternal;  ///< Internal tank heater duty [0–100 %]
+    uint8_t     pwmBoost;     ///< Boost inline heater duty   [0–100 %]
+    BoilerState state;        ///< Current state
+    const char* stateLabel;   ///< Human-readable label (static, safe to log)
 };
 
 // ---------------------------------------------------------------------------
@@ -70,16 +80,11 @@ class SystemManager {
 public:
     SystemManager() = default;
 
-    /// Evaluate inputs and return the calculated command for this cycle.
-    /// Thread-safe: no mutable state — pure calculation.
+    /// Pure calculation — thread-safe, no internal state mutated.
     SystemCommand process(const SystemInputs& inputs) const;
 
-    /// Returns the label string for a given state (static storage, never null).
+    /// Static label lookup — never returns null.
     static const char* labelFor(BoilerState state);
-
-private:
-    /// Proportional PWM: 0 at delta<=0, linear up to PWM_MAX at delta>=PROP_WINDOW_C.
-    static uint8_t proportionalPWM(float currentTemp, float targetTemp);
 };
 
 #endif // SYSTEM_MANAGER_H
