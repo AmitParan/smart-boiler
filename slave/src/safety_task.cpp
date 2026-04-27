@@ -12,7 +12,8 @@ void TaskSafety(void* pvParameters) {
 
         // -------------------------------------------------------------------
         //  1. Temperature overheat protection
-        //     DS18B20 sensors: cut power if any reads > 80°C
+        //     Hardware comparator cuts power at 85°C. Software preemptively
+        //     triggers a fault at 80°C to prevent reaching hardware limits.
         // -------------------------------------------------------------------
         for (int i = 0; i < 3; i++) {
             if (temps[i] > 80.0f) {
@@ -24,31 +25,35 @@ void TaskSafety(void* pvParameters) {
 
         // -------------------------------------------------------------------
         //  2. Boost heater flow interlock
-        //     Boost element MUST NOT run without water flow (dry-fire risk)
+        //     Boost element MUST NOT run without water flow (dry-fire risk).
         // -------------------------------------------------------------------
         bool boost_commanded = (cmd_flags & CMD_BOOST_ENABLE) &&
                                (cmd_pwm_boost > 0u);
+                               
         if (boost_commanded && current_flow < 1.0f) {
             Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
             fault = true;
         }
 
         // -------------------------------------------------------------------
-        //  3. Uncommanded current detection (possible SSR short-circuit)
+        //  3. Uncommanded current detection (SSR short-circuit)
+        //     Threshold set to 0.5A. The ACS758-050B has an inherent noise 
+        //     floor of ~0.25A (10mV noise / 40mV/A). 0.5A safely avoids 
+        //     false positives while quickly detecting SSR leakage.
         // -------------------------------------------------------------------
         bool any_commanded = (cmd_pwm_internal > 0u) || (cmd_pwm_boost > 0u);
-        if (!any_commanded && current_rms > 1.0f) {
-            Serial.println("[SAFETY] WARNING: Current detected without command"
+        if (!any_commanded && current_rms > 0.5f) {
+            Serial.println("[SAFETY] FAULT: Current detected without command"
                            " — possible SSR short!");
             fault = true;
         }
 
         if (fault) {
-            // Hard-cut both SSRs — PWM task will also see system_fault
-            digitalWrite(PIN_SSR_INT, LOW);
-            digitalWrite(PIN_SSR_EXT, LOW);
+            // Hard-cut both SSRs by stopping the 1kHz hardware watchdog carrier
+            ledcWrite(0, 0); // Stops PWM_CH_INT
+            ledcWrite(1, 0); // Stops PWM_CH_EXT
             system_fault = true;
-            // system_fault is only cleared by a hardware reboot
+            // Note: system_fault is only cleared by a hardware reboot
         }
 
         // Run every 50 ms for fast fault response
