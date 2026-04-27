@@ -7,7 +7,17 @@
 #include "pwm_task_internal.h"
 #include "pwm_task_boost.h"
 #include "plc_task.h"
+#include "plc_test_sender.h"
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
+
+// ---------------------------------------------------------------------------
+//  SLAVE TEST MODE
+//  Set to 1 to replace real sensor data with scripted scenarios.
+//  The slave will cycle through all SystemManager states and send fake STATUS
+//  packets so the master test bench (TEST_MODE 1) can verify its logic.
+//  Set to 0 for normal operation with real sensors.
+// ---------------------------------------------------------------------------
+#define SLAVE_TEST_MODE 0
 
 void setup() {
     Serial.begin(115200);
@@ -38,8 +48,13 @@ void setup() {
     xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int",  4096, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst",  4096, NULL, 3, NULL, 0);
 
-    // PLC communication
-    xTaskCreatePinnedToCore(TaskPLC,     "PLC",     4096, NULL, 2, NULL, 0);
+    // PLC communication — or scripted test sender
+#if SLAVE_TEST_MODE
+    Serial.println("[SLAVE TEST MODE] Starting PLC test sender");
+    xTaskCreatePinnedToCore(TaskPLCTestSender, "PLCTest", 4096, NULL, 2, NULL, 0);
+#else
+    xTaskCreatePinnedToCore(TaskPLC, "PLC", 4096, NULL, 2, NULL, 0);
+#endif
 }
 
 void loop() {
