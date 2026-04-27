@@ -2,6 +2,7 @@
 #include "boiler_protocol.h"
 #include "config.h"
 #include "ui_manager.h"
+#include "SystemManager.h"
 
 // Access UI state set by the user on the touch screen (defined in ui_manager.cpp)
 extern bool boiler_state;
@@ -55,14 +56,15 @@ static void processStatusPacket(const uint8_t* raw) {
     float t_boiler    = pkt->tempBoilerOut / 10.0f;
     float t_boost     = pkt->tempBoostOut  / 10.0f;
     float flow        = pkt->flowRate      / 10.0f;
-    // float power    = (float)pkt->powerWatts;  // available for future stats screen
+    float power_w     = (float)pkt->powerWatts;
 
     // Cache for PWM calculation in sendCommand()
     last_t_internal = t_internal;
     last_flow       = flow;
 
     // Update the LVGL UI (function is LVGL-lock safe)
-    UI_UpdateSensorData(t_internal, t_boost, flow);
+    UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
+    UI_UpdatePLCStatus(true);
 
     Serial.printf("[COMMS RX] STATUS seq=%u t1=%.1f t2=%.1f t3=%.1f "
                   "flow=%.1f pwr=%uW status=0x%02X\n",
@@ -73,13 +75,11 @@ static void processStatusPacket(const uint8_t* raw) {
 
 // ---------------------------------------------------------------------------
 //  sendCommand
-//  Builds a BoilerCmdPacket_t from the current UI state and transmits it.
+//  Builds a BoilerCmdPacket_t using SystemManager and transmits it.
 //  Called once per second from TaskMasterComms.
-//
-//  PWM strategy (master is the brain):
-//    Internal heater: proportional — 100% when delta >= 5°C, linear below that
-//    Boost heater:    binary       — full power only when water is flowing
 // ---------------------------------------------------------------------------
+static SystemManager s_manager;
+
 static void sendCommand() {
     BoilerCmdPacket_t pkt;
     pkt.startByte  = PROTO_START;
@@ -87,28 +87,20 @@ static void sendCommand() {
     pkt.packetType = PROTO_TYPE_CMD;
     pkt.sequence   = tx_seq++;
 
-    if (!boiler_state) {
-        // User pressed OFF — cut both heaters
-        pkt.pwmInternal = 0u;
-        pkt.pwmBoost    = 0u;
-        pkt.cmdFlags    = 0u;
-    } else {
-        // --- Internal heater: proportional control ---
-        float delta = (float)target_temperature - last_t_internal;
-        uint8_t pwm_int = 0u;
-        if (delta >= 5.0f) {
-            pwm_int = 100u;                            // full power
-        } else if (delta > 0.0f) {
-            pwm_int = (uint8_t)(delta / 5.0f * 100.0f); // proportional
-        }
+    // Build inputs for the state machine
+    SystemInputs inputs;
+    inputs.currentTemp      = last_t_internal;
+    inputs.flowRateLPM      = last_flow;
+    inputs.targetShowerTemp = (float)target_temperature;  // UI slider value
+    inputs.uiStateOn        = boiler_state;
+    inputs.plcConnected     = true;  // we are inside the comms task — PLC is up
 
-        // --- Boost heater: on when water is flowing ---
-        uint8_t pwm_bst = (last_flow > 0.5f) ? 100u : 0u;
+    SystemCommand cmd = s_manager.process(inputs);
 
-        pkt.pwmInternal = pwm_int;
-        pkt.pwmBoost    = pwm_bst;
-        pkt.cmdFlags    = CMD_HEATER_ENABLE | CMD_BOOST_ENABLE;
-    }
+    pkt.pwmInternal = cmd.pwmInternal;
+    pkt.pwmBoost    = cmd.pwmBoost;
+    pkt.cmdFlags    = (cmd.pwmInternal > 0) ? CMD_HEATER_ENABLE  : 0u;
+    pkt.cmdFlags   |= (cmd.pwmBoost    > 0) ? CMD_BOOST_ENABLE   : 0u;
 
     pkt.crc8    = proto_cmd_crc(&pkt);
     pkt.endByte = PROTO_END;
@@ -120,8 +112,8 @@ static void sendCommand() {
         delay(2);
     }
 
-    Serial.printf("[COMMS TX] CMD seq=%u pwmInt=%u pwmBst=%u flags=0x%02X\n",
-                  pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, pkt.cmdFlags);
+    Serial.printf("[COMMS TX] CMD seq=%u pwmInt=%u pwmBst=%u state=%s\n",
+                  pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, cmd.stateLabel);
 }
 
 // ---------------------------------------------------------------------------
@@ -245,6 +237,7 @@ void TaskMasterComms(void* pvParameters) {
             }
             if (!got_status) {
                 Serial.println("[COMMS] No STATUS received within 3s");
+                UI_UpdatePLCStatus(false);
             }
         }
 
