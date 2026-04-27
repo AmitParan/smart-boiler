@@ -4,7 +4,8 @@
 #include "temp_task.h"
 #include "current_task.h"
 #include "safety_task.h"
-#include "pwm_task.h"
+#include "pwm_task_internal.h"
+#include "pwm_task_boost.h"
 #include "plc_task.h"
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
@@ -33,8 +34,9 @@ void setup() {
     xTaskCreatePinnedToCore(TaskCurrent, "Current", 4096, NULL, 2, NULL, 0);
 
     // Control tasks  (higher priority than sensors)
-    xTaskCreatePinnedToCore(TaskSafety,  "Safety",  4096, NULL, 4, NULL, 0);
-    xTaskCreatePinnedToCore(TaskPWM,     "PWM",     4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(TaskSafety,       "Safety",   4096, NULL, 4, NULL, 0);
+    xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int",  4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst",  4096, NULL, 3, NULL, 0);
 
     // PLC communication
     xTaskCreatePinnedToCore(TaskPLC,     "PLC",     4096, NULL, 2, NULL, 0);
