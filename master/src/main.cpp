@@ -1,11 +1,70 @@
 #include <Arduino.h>
 #include "ui_manager.h"
 #include "DataManager.h"
+#include "SystemManagerTest.h"
 #include <WiFi.h>
 #include <time.h>
 
 // Declaration of communication function (located in comms_master.cpp)
 extern void TaskMasterComms(void * pvParameters);
+
+// ---------------------------------------------------------------------------
+//  DEMO TASK — simulates slave data so the UI can be tested without hardware
+//  Set DEMO_MODE to 0 to disable when real slave is connected
+// ---------------------------------------------------------------------------
+#define DEMO_MODE 0
+
+// ---------------------------------------------------------------------------
+//  TEST MODE — runs SystemManager test bench, no slave needed
+//  Set TEST_MODE 1 to verify state machine logic via serial monitor.
+//  DEMO_MODE and TEST_MODE are mutually exclusive; TEST_MODE takes priority.
+// ---------------------------------------------------------------------------
+#define TEST_MODE 0
+
+#if DEMO_MODE
+static void TaskDemoData(void* pvParameters) {
+    // Demo sequence: cold tank heating up, then shower running, then cooling
+    float t_internal = 22.0f;   // start cold
+    float t_boost    = 20.0f;
+    float flow       = 0.0f;
+    int   phase      = 0;       // 0=heating, 1=ready, 2=shower, 3=cooldown
+    int   phase_tick = 0;
+
+    for (;;) {
+        phase_tick++;
+
+        switch (phase) {
+            case 0: // Heating up from 22 to 65
+                t_internal += 0.5f;
+                t_boost     = t_internal - 5.0f;
+                flow        = 0.0f;
+                if (t_internal >= 65.0f) { phase = 1; phase_tick = 0; }
+                break;
+            case 1: // Ready — hold for 10 seconds
+                flow = 0.0f;
+                if (phase_tick >= 10) { phase = 2; phase_tick = 0; }
+                break;
+            case 2: // Shower running — flow active, temp slowly drops
+                flow        = 7.5f;
+                t_internal -= 0.3f;
+                t_boost     = 42.0f;
+                if (phase_tick >= 15) { phase = 3; phase_tick = 0; }
+                break;
+            case 3: // Shower done, cooldown
+                flow        = 0.0f;
+                t_boost     = 20.0f;
+                t_internal -= 0.1f;
+                if (t_internal <= 25.0f) { phase = 0; phase_tick = 0; t_internal = 22.0f; }
+                break;
+        }
+
+        UI_UpdateSensorData(t_internal, t_boost, flow, 0.0f);
+        Serial.printf("[DEMO] t1=%.1f t2=%.1f flow=%.1f phase=%d\n",
+                      t_internal, t_boost, flow, phase);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+#endif
 
 namespace {
 const char* kSetupApSsid = "Boiler-Setup";
@@ -123,9 +182,17 @@ void setup() {
         startSetupAccessPoint();
     }
 
-    // 3. Start communication task
+    // 3. Start communication task, demo task, or SystemManager test bench
+#if TEST_MODE
+    Serial.println("[TEST MODE] Starting SystemManager test bench");
+    xTaskCreatePinnedToCore(TaskSystemManagerTest, "SMTest", 4096, NULL, 1, NULL, 1);
+#elif DEMO_MODE
+    Serial.println("[DEMO MODE] Starting demo data task instead of real comms");
+    xTaskCreatePinnedToCore(TaskDemoData, "DemoData", 4096, NULL, 1, NULL, 1);
+#else
     // Running on Core 1 to avoid interfering with future WiFi (which runs on Core 0)
     xTaskCreatePinnedToCore(TaskMasterComms, "MasterComms", 4096, NULL, 1, NULL, 1);
+#endif
     
     // Example: Update time periodically (you can use RTC or NTP later)
     // UI_UpdateTime(12, 30);
@@ -171,11 +238,15 @@ void loop() {
 
     last_wifi_connected = wifi_connected;
     
-    // Fetch weather every 10 minutes
+    // Fetch weather: immediately on first boot, then every 10 minutes
     static unsigned long last_weather_fetch = 0;
-    if(millis() - last_weather_fetch > 600000) {  // 10 minutes
-        last_weather_fetch = millis();
-        fetchWeather();
+    static bool weather_fetched_once = false;
+    if (!weather_fetched_once || millis() - last_weather_fetch > 600000UL) {
+        if (WiFi.status() == WL_CONNECTED) {
+            weather_fetched_once = true;
+            last_weather_fetch = millis();
+            fetchWeather();
+        }
     }
     
     // Check screensaver
