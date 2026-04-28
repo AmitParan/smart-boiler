@@ -24,8 +24,16 @@ void TaskCurrent(void * pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(5));
     }
     float vref_actual = vref_sum / 200.0f;
+
+    // Derive actual VCC from measured VREF (ACS758: VREF = VCC/2)
+    float vcc_actual = vref_actual * 2.0f;
+    // Sensitivity scales linearly with VCC (spec is 40mV/A at 5V)
+    float sensitivity_actual = ACS758_SENSITIVITY * (vcc_actual / 5.0f);
+
     Serial.printf("[CURRENT] Calibrated VREF = %.3fV (expected %.3fV)\n",
                   vref_actual, ACS758_VREF);
+    Serial.printf("[CURRENT] VCC = %.3fV  sensitivity = %.1f mV/A (nominal 40.0)\n",
+                  vcc_actual, sensitivity_actual * 1000.0f);
     Serial.println("[CURRENT] Task started");
 
     for(;;) {
@@ -35,7 +43,7 @@ void TaskCurrent(void * pvParameters) {
         for (int i = 0; i < numSamples; i++) {
             float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
             float v_sensor = v_adc / CURRENT_DIVIDER_RATIO;
-            float current_instant = (v_sensor - vref_actual) / ACS758_SENSITIVITY;
+            float current_instant = (v_sensor - vref_actual) / sensitivity_actual;
             sumSq += (current_instant * current_instant);
             vTaskDelay(pdMS_TO_TICKS(1));
         }

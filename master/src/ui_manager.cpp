@@ -78,6 +78,11 @@ static lv_obj_t* lbl_shower_readiness = NULL;
 static lv_obj_t* lbl_flow_status      = NULL;  // "● Flow Active" / "○ No Flow"
 static lv_obj_t* temp_circle_obj      = NULL;
 
+// Info bar widgets
+static lv_obj_t* lbl_power_val  = NULL;
+static lv_obj_t* lbl_flow_val   = NULL;
+static lv_obj_t* lbl_plc_status = NULL;
+
 // ---------------------------------------------------------------------------
 //  State
 // ---------------------------------------------------------------------------
@@ -577,6 +582,54 @@ void UI_Init() {
     lv_led_set_color(led_heating, lv_palette_main(LV_PALETTE_ORANGE));
     lv_led_off(led_heating);
 
+    // Target temperature controls (below the circle)
+    lv_obj_t* target_card = lv_obj_create(left_panel);
+    disableScroll(target_card);
+    lv_obj_set_size(target_card, 240, 130);
+    lv_obj_set_style_radius(target_card, 20, 0);
+    lv_obj_set_style_bg_color(target_card, lv_color_white(), 0);
+    lv_obj_set_style_border_width(target_card, 2, 0);
+    lv_obj_set_style_border_color(target_card, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_set_style_shadow_width(target_card, 12, 0);
+    lv_obj_set_style_shadow_opa(target_card, LV_OPA_10, 0);
+    lv_obj_set_style_pad_all(target_card, 8, 0);
+
+    lv_obj_t* lbl_target_title = lv_label_create(target_card);
+    lv_label_set_text(lbl_target_title, "Target Temp");
+    lv_obj_set_style_text_font(lbl_target_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_target_title, CLR_SUBTEXT, 0);
+    lv_obj_align(lbl_target_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    btn_temp_up = lv_btn_create(target_card);
+    lv_obj_set_size(btn_temp_up, 50, 40);
+    lv_obj_align(btn_temp_up, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_temp_up, 12, 0);
+    lv_obj_set_style_bg_color(btn_temp_up, CLR_ACCENT, 0);
+    lv_obj_add_event_cb(btn_temp_up, temp_up_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_up = lv_label_create(btn_temp_up);
+    lv_label_set_text(lbl_up, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(lbl_up, lv_color_white(), 0);
+    lv_obj_center(lbl_up);
+
+    btn_temp_down = lv_btn_create(target_card);
+    lv_obj_set_size(btn_temp_down, 50, 40);
+    lv_obj_align(btn_temp_down, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_radius(btn_temp_down, 12, 0);
+    lv_obj_set_style_bg_color(btn_temp_down, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_add_event_cb(btn_temp_down, temp_down_btn_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_dn = lv_label_create(btn_temp_down);
+    lv_label_set_text(lbl_dn, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(lbl_dn, CLR_TEXT, 0);
+    lv_obj_center(lbl_dn);
+
+    lbl_target_temp = lv_label_create(target_card);
+    char tgt_buf[8];
+    snprintf(tgt_buf, sizeof(tgt_buf), "%d\xc2\xb0", target_temperature);
+    lv_label_set_text(lbl_target_temp, tgt_buf);
+    lv_obj_set_style_text_font(lbl_target_temp, &lv_font_montserrat_28, 0);
+    lv_obj_set_style_text_color(lbl_target_temp, CLR_TEXT, 0);
+    lv_obj_align(lbl_target_temp, LV_ALIGN_CENTER, 0, 0);
+
     // ===================================================================
     //  RIGHT PANEL  (430 x 425)  — ON/OFF + Shower Readiness
     // ===================================================================
@@ -647,13 +700,49 @@ void UI_Init() {
     lv_obj_set_style_bg_color(divider, lv_color_hex(0xE0E0E0), 0);
     lv_obj_set_style_border_width(divider, 0, 0);
 
-    // Row 3: live flow indicator
-    lbl_flow_status = lv_label_create(shower_card);
-    lv_label_set_text(lbl_flow_status, LV_SYMBOL_STOP "  No Flow");
-    lv_obj_set_style_text_font(lbl_flow_status, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_flow_status, CLR_SUBTEXT, 0);
+    // ===================================================================
+    //  INFO BAR  (800 x 40, below main row) — power, flow rate, PLC status
+    // ===================================================================
+    lv_obj_t* info_bar = lv_obj_create(scr);
+    disableScroll(info_bar);
+    lv_obj_set_size(info_bar, 800, 42);
+    lv_obj_set_pos(info_bar, 0, 438);
+    lv_obj_set_style_bg_color(info_bar, lv_color_hex(0xE8EEF6), 0);
+    lv_obj_set_style_border_width(info_bar, 0, 0);
+    lv_obj_set_style_radius(info_bar, 0, 0);
+    lv_obj_set_style_pad_hor(info_bar, 20, 0);
+    lv_obj_set_style_pad_ver(info_bar, 0, 0);
+    lv_obj_set_flex_flow(info_bar, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(info_bar, LV_FLEX_ALIGN_SPACE_BETWEEN,
+                          LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
-    // Screensaver layer (always on top)
+    // Power label
+    lv_obj_t* lbl_power_icon = lv_label_create(info_bar);
+    lv_label_set_text(lbl_power_icon, LV_SYMBOL_CHARGE "  Power:");
+    lv_obj_set_style_text_font(lbl_power_icon, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_power_icon, CLR_SUBTEXT, 0);
+
+    lbl_power_val = lv_label_create(info_bar);
+    lv_label_set_text(lbl_power_val, "-- W");
+    lv_obj_set_style_text_font(lbl_power_val, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_power_val, CLR_TEXT, 0);
+
+    // Flow label
+    lv_obj_t* lbl_flow_icon = lv_label_create(info_bar);
+    lv_label_set_text(lbl_flow_icon, LV_SYMBOL_PLAY "  Flow:");
+    lv_obj_set_style_text_font(lbl_flow_icon, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_flow_icon, CLR_SUBTEXT, 0);
+
+    lbl_flow_val = lv_label_create(info_bar);
+    lv_label_set_text(lbl_flow_val, "-- L/min");
+    lv_obj_set_style_text_font(lbl_flow_val, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_flow_val, CLR_TEXT, 0);
+
+    // PLC status
+    lbl_plc_status = lv_label_create(info_bar);
+    lv_label_set_text(lbl_plc_status, LV_SYMBOL_WARNING "  No Signal");
+    lv_obj_set_style_text_font(lbl_plc_status, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_plc_status, lv_palette_main(LV_PALETTE_RED), 0);
     createScreensaver();
     last_touch_time = millis();
 
@@ -745,6 +834,23 @@ void UI_UpdateWiFiStatus() {
 void UI_UpdateBoostTemp(float value)  { (void)value; }
 void UI_UpdateFlowRate(float value)   { (void)value; }
 
+void UI_UpdatePLCStatus(bool connected) {
+    if (lvgl_port_lock(UI_REFRESH_RATE)) {
+        if (lbl_plc_status != NULL) {
+            if (connected) {
+                lv_label_set_text(lbl_plc_status, LV_SYMBOL_OK "  Connected");
+                lv_obj_set_style_text_color(lbl_plc_status,
+                    lv_palette_main(LV_PALETTE_GREEN), 0);
+            } else {
+                lv_label_set_text(lbl_plc_status, LV_SYMBOL_WARNING "  No Signal");
+                lv_obj_set_style_text_color(lbl_plc_status,
+                    lv_palette_main(LV_PALETTE_RED), 0);
+            }
+        }
+        lvgl_port_unlock();
+    }
+}
+
 void UI_UpdateSystemMode(const char* mode) {
     if (lvgl_port_lock(UI_REFRESH_RATE)) {
         if (lbl_system_mode != NULL && mode != NULL)
@@ -765,7 +871,7 @@ void UI_UpdateSSRStatus(bool internal_on, bool boost_on) {
 }
 
 // Called by TaskMasterComms every second with live slave packet fields
-void UI_UpdateSensorData(float t_internal, float t_boost, float flow) {
+void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float power_w) {
     // --- Consumer metrics ---
     // Showers: 80 L tank, shower = 60 L mixed to 38°C from 20°C cold
     int showers = 0;
@@ -828,12 +934,29 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow) {
         bool flowing = (flow > 0.5f);
         if (lbl_flow_status != NULL) {
             if (flowing) {
-                lv_label_set_text(lbl_flow_status, LV_SYMBOL_PLAY "  Shower Running");
+                char fmsg[28];
+                snprintf(fmsg, sizeof(fmsg), LV_SYMBOL_PLAY "  %.1f L/min", flow);
+                lv_label_set_text(lbl_flow_status, fmsg);
                 lv_obj_set_style_text_color(lbl_flow_status, CLR_READY, 0);
             } else {
                 lv_label_set_text(lbl_flow_status, LV_SYMBOL_STOP "  No Flow");
                 lv_obj_set_style_text_color(lbl_flow_status, CLR_SUBTEXT, 0);
             }
+        }
+
+        // Power and flow rate in info bar
+        if (lbl_power_val != NULL) {
+            char pbuf[16];
+            snprintf(pbuf, sizeof(pbuf), "%.0f W", power_w);
+            lv_label_set_text(lbl_power_val, pbuf);
+        }
+        if (lbl_flow_val != NULL) {
+            char fbuf[16];
+            if (flow > 0.05f)
+                snprintf(fbuf, sizeof(fbuf), "%.1f L/min", flow);
+            else
+                snprintf(fbuf, sizeof(fbuf), "0.0 L/min");
+            lv_label_set_text(lbl_flow_val, fbuf);
         }
 
         // Heating LED

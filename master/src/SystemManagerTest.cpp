@@ -1,3 +1,10 @@
+// =============================================================================
+// [TEST FILE] SystemManagerTest.cpp
+// PURPOSE : Standalone test bench for SystemManager state machine.
+// ENABLE  : Set #define TEST_MODE 1 in master/src/main.cpp
+// DISABLE : TEST_MODE 0 (default) — this file is compiled but never runs.
+// DO NOT  : Enable in production. For development validation only.
+// =============================================================================
 #include "SystemManagerTest.h"
 #include "SystemManager.h"
 #include "ui_manager.h"

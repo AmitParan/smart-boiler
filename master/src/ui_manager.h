@@ -17,6 +17,7 @@ void UI_UpdateBoostTemp(float value);
 void UI_UpdateFlowRate(float value);
 void UI_UpdateSystemMode(const char* mode);
 void UI_UpdateSSRStatus(bool internal_on, bool boost_on);
-void UI_UpdateSensorData(float t_internal, float t_boost, float flow);
+void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float power_w);
+void UI_UpdatePLCStatus(bool connected);
 
 #endif

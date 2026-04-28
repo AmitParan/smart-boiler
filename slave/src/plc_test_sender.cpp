@@ -1,3 +1,11 @@
+// =============================================================================
+// [TEST FILE] plc_test_sender.cpp
+// PURPOSE : Scripted STATUS packet sender — drives master SystemManager
+//           through all sensor-based scenarios over the real PLC line.
+// ENABLE  : Set #define SLAVE_TEST_MODE 1 in slave/src/main.cpp
+// DISABLE : SLAVE_TEST_MODE 0 (default) — real TaskPLC runs instead.
+// DO NOT  : Enable in production. For development validation only.
+// =============================================================================
 #include "plc_test_sender.h"
 #include "plc_comms.h"
 #include "shared_data.h"
@@ -114,6 +122,21 @@ void TaskPLCTestSender(void* pvParameters) {
     uint8_t  scenario_idx    = 0;
     uint32_t scenario_start  = millis();
 
+    // Seed shared_data for scenario 0 so safety task starts clean
+    {
+        const SlaveTestScenario& sc0 = kSlaveScenarios[0];
+        temps[0]      = sc0.tempInternal;
+        temps[1]      = sc0.tempBoilerOut;
+        temps[2]      = sc0.tempBoostOut;
+        current_flow  = sc0.flow;
+        power_watts   = sc0.power;
+    }
+    Serial.println("------------------------------------------------------------");
+    Serial.printf("[TEST] Scenario 1/%u: %s\n", kSlaveNumScenarios, kSlaveScenarios[0].name);
+    Serial.printf("       tInt=%.1f  flow=%.1f  pwr=%.0f\n",
+                  kSlaveScenarios[0].tempInternal, kSlaveScenarios[0].flow, kSlaveScenarios[0].power);
+    Serial.println("------------------------------------------------------------");
+
     for (;;) {
         // Advance scenario after hold time expires
         if (millis() - scenario_start >= SCENARIO_HOLD_S * 1000UL) {
@@ -121,6 +144,14 @@ void TaskPLCTestSender(void* pvParameters) {
             scenario_start = millis();
 
             const SlaveTestScenario& sc = kSlaveScenarios[scenario_idx];
+
+            // Update shared_data so the safety task uses simulated sensor values
+            temps[0]     = sc.tempInternal;
+            temps[1]     = sc.tempBoilerOut;
+            temps[2]     = sc.tempBoostOut;
+            current_flow = sc.flow;
+            power_watts  = sc.power;
+
             Serial.println("------------------------------------------------------------");
             Serial.printf("[TEST] Scenario %u/%u: %s\n",
                           scenario_idx + 1, kSlaveNumScenarios, sc.name);
