@@ -1,6 +1,8 @@
 #ifndef UI_MANAGER_H
 #define UI_MANAGER_H
 
+void TaskUi(void* pvParameters);
+
 void UI_Init();
 void UI_UpdateWaterTemp(float value);
 void UI_UpdateWeather(float temp, const char* condition);

@@ -1,62 +1,120 @@
 #include "safety_task.h"
-#include "config.h"
-#include "shared_data.h"
-#include "boiler_protocol.h"
+
 #include <Arduino.h>
+#include "boiler_protocol.h"
+#include "config.h"
+#include "shared/slave_state.h"
+#include "shared_data.h"   // legacy fault/status flags until PLC is refactored
+#include "task_config.h"
+
+namespace {
+static constexpr float TEMP_SOFTWARE_CUTOFF_C = 80.0f;
+static constexpr float BOOST_MIN_FLOW_LPM = 1.0f;
+
+void forceOutputsOff() {
+    ledcWrite(PIN_SSR_INT, 0);
+    ledcWrite(PIN_SSR_EXT, 0);
+    internal_ssr_on = false;
+    boost_ssr_on = false;
+}
+
+bool commandTimedOut(const CommandSnapshot& command, TickType_t now) {
+    if (!command.valid) {
+        return true;
+    }
+
+    return (now - command.receivedAtTick) >
+           pdMS_TO_TICKS(TASK_COMMAND_WATCHDOG_MS);
+}
+
+bool bothHeatersCommanded(const CommandSnapshot& command) {
+    if (!command.valid) {
+        return false;
+    }
+
+    const bool internalEnabled = (command.flags & CMD_HEATER_ENABLE) != 0u;
+    const bool boostEnabled = (command.flags & CMD_BOOST_ENABLE) != 0u;
+    return internalEnabled && boostEnabled;
+}
+
+bool overTemperature(const SensorSnapshot& sensors) {
+    if (!sensors.valid) {
+        return false;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        if (sensors.tempsC[i] > TEMP_SOFTWARE_CUTOFF_C) {
+            Serial.printf("[SAFETY] FAULT: Overheat sensor[%d] = %.1f C\n",
+                          i,
+                          sensors.tempsC[i]);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool boostWithoutFlow(const CommandSnapshot& command,
+                      const SensorSnapshot& sensors) {
+    if (!command.valid) {
+        return false;
+    }
+
+    const bool boostCommanded =
+        (command.flags & CMD_BOOST_ENABLE) != 0u &&
+        command.pwmBoost > 0u;
+
+    if (!boostCommanded) {
+        return false;
+    }
+
+    if (!sensors.valid || sensors.flowLpm < BOOST_MIN_FLOW_LPM) {
+        Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
+        return true;
+    }
+
+    return false;
+}
+}
 
 void TaskSafety(void* pvParameters) {
+    (void)pvParameters;
+
     Serial.println("[SAFETY] Task started");
 
     for (;;) {
+        const TickType_t now = xTaskGetTickCount();
+
+        CommandSnapshot command{};
+        SensorSnapshot sensors{};
+        SlaveState_ReadCommand(command);
+        SlaveState_ReadSensors(sensors);
+
         bool fault = false;
 
-        // -------------------------------------------------------------------
-        //  1. Temperature overheat protection
-        //     Hardware comparator cuts power at 85°C. Software preemptively
-        //     triggers a fault at 80°C to prevent reaching hardware limits.
-        // -------------------------------------------------------------------
-        for (int i = 0; i < 3; i++) {
-            if (temps[i] > 80.0f) {
-                Serial.printf("[SAFETY] FAULT: Overheat sensor[%d] = %.1f°C\n",
-                              i, temps[i]);
-                fault = true;
-            }
-        }
-
-        // -------------------------------------------------------------------
-        //  2. Boost heater flow interlock
-        //     Boost element MUST NOT run without water flow (dry-fire risk).
-        // -------------------------------------------------------------------
-        bool boost_commanded = (cmd_flags & CMD_BOOST_ENABLE) &&
-                               (cmd_pwm_boost > 0u);
-                               
-        if (boost_commanded && current_flow < 1.0f) {
-            Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
+        if (commandTimedOut(command, now)) {
+            Serial.println("[SAFETY] FAULT: Master command watchdog timeout");
             fault = true;
         }
 
-        // -------------------------------------------------------------------
-        //  3. Uncommanded current detection (SSR short-circuit)
-        //     Threshold set to 0.5A. The ACS758-050B has an inherent noise 
-        //     floor of ~0.25A (10mV noise / 40mV/A). 0.5A safely avoids 
-        //     false positives while quickly detecting SSR leakage.
-        // -------------------------------------------------------------------
-        bool any_commanded = (cmd_pwm_internal > 0u) || (cmd_pwm_boost > 0u);
-        if (!any_commanded && current_rms > 0.5f) {
-            Serial.println("[SAFETY] FAULT: Current detected without command"
-                           " — possible SSR short!");
+        if (bothHeatersCommanded(command)) {
+            Serial.println("[SAFETY] FAULT: Both heaters commanded at once");
+            fault = true;
+        }
+
+        if (overTemperature(sensors)) {
+            fault = true;
+        }
+
+        if (boostWithoutFlow(command, sensors)) {
             fault = true;
         }
 
         if (fault) {
-            // Hard-cut both SSRs by stopping the 1kHz hardware watchdog carrier
-            ledcWrite(0, 0); // Stops PWM_CH_INT
-            ledcWrite(1, 0); // Stops PWM_CH_EXT
+            forceOutputsOff();
             system_fault = true;
-            // Note: system_fault is only cleared by a hardware reboot
         }
 
-        // Run every 50 ms for fast fault response
-        vTaskDelay(pdMS_TO_TICKS(50));
+        vTaskDelay(pdMS_TO_TICKS(TASK_SAFETY_PERIOD_MS));
     }
 }

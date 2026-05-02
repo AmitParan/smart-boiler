@@ -11,6 +11,9 @@
 #include "lvgl_v8_port.h"
 #include "config.h"
 #include "DataManager.h"
+#include "boiler_protocol.h"
+#include "shared/master_state.h"
+#include "task_config.h"
 
 #define WEATHER_API_KEY      "7a1028898a2cdcc08a58a8109fb061e4"  // local only - do not commit
 #define WEATHER_CITY         "Tel Aviv"
@@ -100,6 +103,16 @@ unsigned long last_weather_update = 0;
 // ---------------------------------------------------------------------------
 static bool stationConnected() { return WiFi.status() == WL_CONNECTED; }
 
+static void publishUiSnapshot() {
+    UiSnapshot snapshot{};
+    snapshot.boilerOn = boiler_state;
+    snapshot.targetShowerTempC = (float)target_temperature;
+    snapshot.updatedAtTick = xTaskGetTickCount();
+    snapshot.valid = true;
+
+    MasterState_PublishUiSnapshot(snapshot);
+}
+
 static void disableScroll(lv_obj_t* obj) {
     if (obj == NULL) return;
     lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
@@ -159,6 +172,7 @@ static void power_btn_event_cb(lv_event_t* e) {
     boiler_state = !boiler_state;
     if (btn_power        != NULL) lv_obj_set_style_bg_color(btn_power, boiler_state ? CLR_ON : CLR_OFF, 0);
     if (lbl_power_status != NULL) lv_label_set_text(lbl_power_status, boiler_state ? "ON" : "OFF");
+    publishUiSnapshot();
     Serial.printf("Boiler: %s\n", boiler_state ? "ON" : "OFF");
 }
 
@@ -169,6 +183,7 @@ static void temp_up_btn_event_cb(lv_event_t* e) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d\xc2\xb0", target_temperature);
         if (lbl_target_temp) lv_label_set_text(lbl_target_temp, buf);
+        publishUiSnapshot();
     }
 }
 
@@ -179,6 +194,7 @@ static void temp_down_btn_event_cb(lv_event_t* e) {
         char buf[8];
         snprintf(buf, sizeof(buf), "%d\xc2\xb0", target_temperature);
         if (lbl_target_temp) lv_label_set_text(lbl_target_temp, buf);
+        publishUiSnapshot();
     }
 }
 
@@ -966,5 +982,76 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
         }
 
         lvgl_port_unlock();
+    }
+}
+
+// ===========================================================================
+//  TaskUi
+//
+//  Owns the UI application layer:
+//    - Initializes LVGL/widgets once.
+//    - Publishes user input through UiSnapshot from event callbacks.
+//    - Pulls SensorSnapshot and CommandSnapshot for display.
+//    - Calls lv_timer_handler() so LVGL renders and dispatches touch events.
+// ===========================================================================
+
+static void renderSnapshotsForDisplay(const SensorSnapshot& sensor,
+                                      const CommandSnapshot& command) {
+    if (sensor.valid) {
+        UI_UpdateSensorData(sensor.tempInternalC,
+                            sensor.tempBoostOutC,
+                            sensor.flowLpm,
+                            sensor.powerW);
+    }
+
+    if (command.valid) {
+        const bool internal_on =
+            (command.cmdFlags & CMD_HEATER_ENABLE) && command.pwmInternal > 0u;
+        const bool boost_on =
+            (command.cmdFlags & CMD_BOOST_ENABLE) && command.pwmBoost > 0u;
+
+        UI_UpdateSSRStatus(internal_on, boost_on);
+        UI_UpdateSystemMode(SystemManager::labelFor(command.state));
+        UI_UpdatePLCStatus(command.plcConnected);
+    }
+}
+
+void TaskUi(void* pvParameters) {
+    (void)pvParameters;
+
+    Serial.println("[UI] Task started");
+
+    UI_Init();
+    publishUiSnapshot();
+
+    SensorSnapshot latestSensor{};
+    CommandSnapshot latestCommand{};
+    TickType_t lastRenderTick = 0;
+    TickType_t lastWakeTick = xTaskGetTickCount();
+
+    for (;;) {
+        SensorSnapshot sensor{};
+        if (MasterState_ReadSensorSnapshot(sensor) && sensor.valid) {
+            latestSensor = sensor;
+        }
+
+        CommandSnapshot command{};
+        if (MasterState_ReadCommandSnapshot(command) && command.valid) {
+            latestCommand = command;
+        }
+
+        const TickType_t now = xTaskGetTickCount();
+        if ((now - lastRenderTick) >= pdMS_TO_TICKS(TASK_UI_RENDER_PERIOD_MS)) {
+            lastRenderTick = now;
+            renderSnapshotsForDisplay(latestSensor, latestCommand);
+            checkScreensaver();
+        }
+
+        if (lvgl_port_lock(TASK_UI_PERIOD_MS)) {
+            lv_timer_handler();
+            lvgl_port_unlock();
+        }
+
+        vTaskDelayUntil(&lastWakeTick, pdMS_TO_TICKS(TASK_UI_PERIOD_MS));
     }
 }
