@@ -3,6 +3,7 @@
 
 #include "DataManager.h"
 #include "brain/event_log.h"
+#include "brain/shower_histogram.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -90,6 +91,11 @@ void setup() {
     // Smart brain event log (requires SPIFFS — must be after DataManager::init)
     EventLog::init();
     Serial.printf("[BOOT] EventLog ready: %u events in log\n", EventLog::count());
+
+    // Shower histogram — 96-slot usage pattern (Phase 2)
+    ShowerHistogram::init();
+    Serial.printf("[BOOT] Histogram ready: %u sessions over %u days\n",
+                  ShowerHistogram::totalSessions(), ShowerHistogram::daysObserved());
 
     // -----------------------------------------------------------------------
     //  Shared state initialization

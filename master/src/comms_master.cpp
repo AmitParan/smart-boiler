@@ -2,6 +2,7 @@
 
 #include "boiler_protocol.h"
 #include "brain/event_log.h"
+#include "brain/shower_histogram.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -91,6 +92,7 @@ void publishStatusPacket(const uint8_t* raw) {
     const bool isFlowing = (snapshot.flowLpm > 0.5f);
     if (isFlowing && !s_wasFlowing) {
         EventLog::append(BoilerEvent::FLOW_START, snapshot.flowLpm);
+        ShowerHistogram::recordShowerNow();
     } else if (!isFlowing && s_wasFlowing) {
         EventLog::append(BoilerEvent::FLOW_STOP, 0.0f);
     }
