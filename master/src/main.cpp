@@ -4,6 +4,7 @@
 #include "DataManager.h"
 #include "brain/event_log.h"
 #include "brain/shower_histogram.h"
+#include "brain/heatup_tracker.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -98,6 +99,11 @@ void setup() {
     ShowerHistogram::init();
     Serial.printf("[BOOT] Histogram ready: %u sessions over %u days\n",
                   ShowerHistogram::totalSessions(), ShowerHistogram::daysObserved());
+
+    // Adaptive lead time tracker (Phase 4)
+    HeatupTracker::init();
+    Serial.printf("[BOOT] HeatupTracker ready: %u session(s), lead=%u min\n",
+                  HeatupTracker::sessionCount(), HeatupTracker::getLeadTimeMinutes());
 
     // -----------------------------------------------------------------------
     //  Shared state initialization

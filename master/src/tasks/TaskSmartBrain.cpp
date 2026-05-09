@@ -23,6 +23,7 @@
 #include "shared/master_state.h"
 #include "brain/shower_histogram.h"
 #include "brain/event_log.h"
+#include "brain/heatup_tracker.h"
 
 // ---------------------------------------------------------------------------
 //  Internal state
@@ -120,9 +121,10 @@ void TaskSmartBrain(void* pvParameters) {
         ShowerHistogram::findPeak(peakSlot, peakCount);
 
         const uint16_t peakMinute   = ShowerHistogram::slotCentreMinutes(peakSlot);
-        const uint16_t startMinute  = (peakMinute >= TASK_SMART_BRAIN_LEAD_MIN)
-                                      ? peakMinute - TASK_SMART_BRAIN_LEAD_MIN
-                                      : peakMinute + 1440u - TASK_SMART_BRAIN_LEAD_MIN;
+        const uint16_t leadMin      = (uint16_t)HeatupTracker::getLeadTimeMinutes();
+        const uint16_t startMinute  = (peakMinute >= leadMin)
+                                      ? peakMinute - leadMin
+                                      : peakMinute + 1440u - leadMin;
 
         const uint16_t nowMinute = minuteOfDay();
         if (nowMinute == 0xFFFFu) {
@@ -178,11 +180,12 @@ void TaskSmartBrain(void* pvParameters) {
 
             s_autoActive    = true;
             s_autoStartTick = now;
+            HeatupTracker::startSession();
 
             EventLog::append(BoilerEvent::AUTO_PREHEAT, (float)peakMinute);
 
             Serial.printf("[SMART] AUTO_PREHEAT fired — peak=%s lead=%u min\n",
-                          peakStr, (unsigned)TASK_SMART_BRAIN_LEAD_MIN);
+                          peakStr, (unsigned)leadMin);
         } else {
             Serial.printf("[SMART] Standby — peak=%s in %d min\n",
                           peakStr, minsToPeak);

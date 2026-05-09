@@ -3,6 +3,7 @@
 #include "boiler_protocol.h"
 #include "brain/event_log.h"
 #include "brain/shower_histogram.h"
+#include "brain/heatup_tracker.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -105,6 +106,7 @@ void publishStatusPacket(const uint8_t* raw) {
         const bool isReady = (snapshot.tempInternalC >= ui.targetShowerTempC - 1.0f);
         if (isReady && !s_wasReady) {
             EventLog::append(BoilerEvent::TANK_READY, snapshot.tempInternalC);
+            HeatupTracker::endSession();
         }
         s_wasReady = isReady;
     }
