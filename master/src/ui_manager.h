@@ -6,6 +6,7 @@ void TaskUi(void* pvParameters);
 void UI_Init();
 void UI_UpdateWaterTemp(float value);
 void UI_UpdateWeather(float temp, const char* condition);
+float UI_GetOutdoorTempC();  // returns last fetched outdoor temperature (°C)
 void UI_SetBoilerState(bool is_on);
 void UI_SetHeatingStatus(bool is_heating);
 void UI_UpdateTime(int hour, int minute);

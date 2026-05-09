@@ -24,6 +24,7 @@
 #include "brain/shower_histogram.h"
 #include "brain/event_log.h"
 #include "brain/heatup_tracker.h"
+#include "ui_manager.h"
 
 // ---------------------------------------------------------------------------
 //  Internal state
@@ -120,8 +121,25 @@ void TaskSmartBrain(void* pvParameters) {
         uint16_t peakCount = 0u;
         ShowerHistogram::findPeak(peakSlot, peakCount);
 
-        const uint16_t peakMinute   = ShowerHistogram::slotCentreMinutes(peakSlot);
-        const uint16_t leadMin      = (uint16_t)HeatupTracker::getLeadTimeMinutes();
+        const uint16_t peakMinute = ShowerHistogram::slotCentreMinutes(peakSlot);
+
+        // Base lead time from HeatupTracker (adaptive, Phase 4)
+        uint16_t leadMin = (uint16_t)HeatupTracker::getLeadTimeMinutes();
+
+        // Weather adjustment (Phase 5):
+        //   inlet_temp = 15°C at 20°C outdoor, shifts 0.3°C per outdoor degree
+        //   colder inlet → longer heat-up → add ~2 min per °C below baseline
+        const float outdoorC   = UI_GetOutdoorTempC();
+        const float inletC     = 15.0f + (outdoorC - 20.0f) * 0.3f;
+        const float deltaInlet = 15.0f - inletC;  // positive = colder than baseline
+        const int8_t weatherAdj = (int8_t)(deltaInlet * 2.0f);  // 2 min/°C
+        if (weatherAdj != 0) {
+            const int16_t adjusted = (int16_t)leadMin + weatherAdj;
+            leadMin = (adjusted < 10) ? 10u : (uint16_t)adjusted;  // floor 10 min
+            EventLog::append(BoilerEvent::WEATHER_ADJUST, outdoorC);
+            Serial.printf("[SMART] Weather adj: outdoor=%.1f°C inlet=%.1f°C adj=%+d min → lead=%u min\n",
+                          outdoorC, inletC, (int)weatherAdj, leadMin);
+        }
         const uint16_t startMinute  = (peakMinute >= leadMin)
                                       ? peakMinute - leadMin
                                       : peakMinute + 1440u - leadMin;

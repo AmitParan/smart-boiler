@@ -98,6 +98,7 @@ char   selected_network[64] = "";
 String scanned_networks[20];
 int    num_networks         = 0;
 unsigned long last_weather_update = 0;
+static float  s_outdoorTempC     = 20.0f;  // last fetched outdoor temp (default 20°C)
 
 // ---------------------------------------------------------------------------
 //  Helpers
@@ -783,6 +784,7 @@ void UI_UpdateWaterTemp(float value) {
 }
 
 void UI_UpdateWeather(float temp, const char* condition) {
+    s_outdoorTempC = temp;  // make available to brain
     if (lvgl_port_lock(UI_REFRESH_RATE)) {
         if (lbl_weather_temp != NULL) {
             char buf[10];
@@ -797,6 +799,10 @@ void UI_UpdateWeather(float temp, const char* condition) {
         }
         lvgl_port_unlock();
     }
+}
+
+float UI_GetOutdoorTempC() {
+    return s_outdoorTempC;
 }
 
 void UI_SetBoilerState(bool is_on) {
