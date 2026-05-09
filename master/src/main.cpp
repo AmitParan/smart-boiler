@@ -2,6 +2,7 @@
 #include <WiFi.h>
 
 #include "DataManager.h"
+#include "brain/event_log.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -85,6 +86,10 @@ void setup() {
 
     // Existing persistent storage layer. Network/UI tasks will use it later.
     DataManager::init();
+
+    // Smart brain event log (requires SPIFFS — must be after DataManager::init)
+    EventLog::init();
+    Serial.printf("[BOOT] EventLog ready: %u events in log\n", EventLog::count());
 
     // -----------------------------------------------------------------------
     //  Shared state initialization

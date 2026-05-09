@@ -1,6 +1,7 @@
 #include <Arduino.h>
 
 #include "boiler_protocol.h"
+#include "brain/event_log.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -83,7 +84,30 @@ void publishStatusPacket(const uint8_t* raw) {
 
     MasterState_PublishSensorSnapshot(snapshot);
 
-    Serial.printf("[COMMS RX] STATUS seq=%u tInt=%.1f tBoost=%.1f "
+    // -----------------------------------------------------------------------
+    //  Smart brain event hooks
+    // -----------------------------------------------------------------------
+    static bool s_wasFlowing = false;
+    const bool isFlowing = (snapshot.flowLpm > 0.5f);
+    if (isFlowing && !s_wasFlowing) {
+        EventLog::append(BoilerEvent::FLOW_START, snapshot.flowLpm);
+    } else if (!isFlowing && s_wasFlowing) {
+        EventLog::append(BoilerEvent::FLOW_STOP, 0.0f);
+    }
+    s_wasFlowing = isFlowing;
+
+    // TANK_READY: internal temp reached the target shower temp (from UI)
+    static bool s_wasReady = false;
+    UiSnapshot ui{};
+    if (MasterState_ReadUiSnapshot(ui) && ui.valid) {
+        const bool isReady = (snapshot.tempInternalC >= ui.targetShowerTempC - 1.0f);
+        if (isReady && !s_wasReady) {
+            EventLog::append(BoilerEvent::TANK_READY, snapshot.tempInternalC);
+        }
+        s_wasReady = isReady;
+    }
+
+    Serial.printf("[COMMS RX] seq=%3u  tInt=%.1f tBst=%.1f  "
                   "flow=%.1f power=%.0fW status=0x%02X\n",
                   snapshot.sequence,
                   snapshot.tempInternalC,
