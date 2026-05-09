@@ -1,48 +1,114 @@
 #include "pwm_task_internal.h"
-#include "config.h"
-#include "shared_data.h"
+
+#include <Arduino.h>
 #include "boiler_protocol.h"
+#include "config.h"
+#include "shared/slave_state.h"
+#include "shared_data.h"   // legacy SSR status/fault flags until PLC is refactored
+#include "task_config.h"
+
+namespace {
+static constexpr uint32_t PWM_CARRIER_HZ = 1000u;
+static constexpr uint8_t PWM_RESOLUTION_BITS = 8u;
+static constexpr uint32_t PWM_ACTIVE_DUTY = 127u;
+
+CommandSnapshot lastCommand{};
+
+bool readLatestCommand(CommandSnapshot& command) {
+    CommandSnapshot latest{};
+    if (SlaveState_ReadCommand(latest) && latest.valid) {
+        lastCommand = latest;
+    }
+
+    command = lastCommand;
+    return command.valid;
+}
+
+uint8_t internalDutyFromCommand(const CommandSnapshot& command) {
+    if (!command.valid || (command.flags & CMD_HEATER_ENABLE) == 0u) {
+        return 0u;
+    }
+
+    return command.pwmInternal > 100u ? 100u : command.pwmInternal;
+}
+
+bool commandChanged(const CommandSnapshot& previous,
+                    const CommandSnapshot& current) {
+    return previous.valid != current.valid ||
+           previous.pwmInternal != current.pwmInternal ||
+           previous.pwmBoost != current.pwmBoost ||
+           previous.flags != current.flags;
+}
+
+bool waitInResponsiveSlices(uint32_t durationMs,
+                            const CommandSnapshot& cycleCommand) {
+    uint32_t elapsedMs = 0u;
+
+    while (elapsedMs < durationMs) {
+        CommandSnapshot currentCommand{};
+        readLatestCommand(currentCommand);
+
+        SensorSnapshot sensors{};
+        SlaveState_ReadSensors(sensors);
+
+        if (commandChanged(cycleCommand, currentCommand)) {
+            return false;
+        }
+
+        const uint32_t remainingMs = durationMs - elapsedMs;
+        const uint32_t delayMs =
+            remainingMs < TASK_PWM_SLICE_MS ? remainingMs : TASK_PWM_SLICE_MS;
+
+        vTaskDelay(pdMS_TO_TICKS(delayMs));
+        elapsedMs += delayMs;
+    }
+
+    return true;
+}
+
+void setInternalOutput(bool on) {
+    ledcWrite(PIN_SSR_INT, on ? PWM_ACTIVE_DUTY : 0u);
+    internal_ssr_on = on;
+}
+}
 
 void TaskPWM_Internal(void* pvParameters) {
-    // Initialize PWM channel 0 at 1000Hz (8-bit resolution) for the hardware watchdog
-    ledcSetup(0, 1000, 8);
-    ledcAttachPin(PIN_SSR_INT, 0);
-    ledcWrite(0, 0); // Start in OFF state
+    (void)pvParameters;
+
+    ledcAttach(PIN_SSR_INT, PWM_CARRIER_HZ, PWM_RESOLUTION_BITS);
+    setInternalOutput(false);
 
     Serial.println("[PWM_INT] Task started");
 
     for (;;) {
-        // Hardware protection: immediate cutoff in case of system fault
         if (system_fault) {
-            ledcWrite(0, 0);
-            internal_ssr_on = false;
-            vTaskDelay(pdMS_TO_TICKS(100));
+            setInternalOutput(false);
+            vTaskDelay(pdMS_TO_TICKS(TASK_PWM_FAULT_PERIOD_MS));
             continue;
         }
 
-        uint8_t pwm_val = cmd_pwm_internal;
-        bool enabled = (cmd_flags & CMD_HEATER_ENABLE) != 0u;
-
-        if (!enabled) {
-            pwm_val = 0;
+        CommandSnapshot command{};
+        if (!readLatestCommand(command)) {
+            setInternalOutput(false);
+            vTaskDelay(pdMS_TO_TICKS(TASK_PWM_SLICE_MS));
+            continue;
         }
 
-        // Calculate ON and OFF times within a hardcoded 2000ms window
-        int on_ms = (2000 * (int)pwm_val) / 100;
-        int off_ms = 2000 - on_ms;
+        const uint8_t pwmVal = internalDutyFromCommand(command);
+        const uint32_t onMs = (TASK_PWM_WINDOW_MS * (uint32_t)pwmVal) / 100u;
+        const uint32_t offMs = TASK_PWM_WINDOW_MS - onMs;
 
-        // Activate heater by sending a 1000Hz pulse (Duty Cycle of 127 out of 255)
-        if (on_ms > 0) {
-            ledcWrite(0, 127); 
-            internal_ssr_on = true;
-            vTaskDelay(pdMS_TO_TICKS(on_ms));
+        if (onMs > 0u) {
+            setInternalOutput(true);
+            if (!waitInResponsiveSlices(onMs, command)) {
+                setInternalOutput(false);
+                continue;
+            }
         }
-        
-        // Stop the pulse to turn off the heater
-        if (off_ms > 0) {
-            ledcWrite(0, 0);
-            internal_ssr_on = false;
-            vTaskDelay(pdMS_TO_TICKS(off_ms));
+
+        if (offMs > 0u) {
+            setInternalOutput(false);
+            waitInResponsiveSlices(offMs, command);
         }
     }
 }

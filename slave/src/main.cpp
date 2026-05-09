@@ -8,6 +8,7 @@
 #include "pwm_task_boost.h"
 #include "plc_task.h"
 #include "plc_test_sender.h"
+#include "shared/slave_state.h"
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,13 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("=== SLAVE UNIT STARTED ===");
+
+    if (!SlaveState_Init()) {
+        Serial.println("[BOOT] ERROR: failed to create slave state queues");
+        for (;;) {
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+    }
 
     // -----------------------------------------------------------------------
     //  FreeRTOS task layout

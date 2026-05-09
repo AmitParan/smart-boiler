@@ -1,61 +1,66 @@
 #include "current_task.h"
-#include "config.h"
-#include "shared_data.h"
+
 #include <Arduino.h>
+#include "config.h"
+#include "shared/slave_state.h"
+#include "task_config.h"
 
 static const int numSamples = 100;
 
-void TaskCurrent(void * pvParameters) {
-    // Initialize pin as analog first, then set attenuation
+void TaskCurrent(void* pvParameters) {
+    (void)pvParameters;
+
     analogReadResolution(12);
-    analogRead(PIN_CURRENT_SENSOR);                              // primes the pin
+    analogRead(PIN_CURRENT_SENSOR);
     analogSetPinAttenuation(PIN_CURRENT_SENSOR, ADC_11db);
 
-    // -----------------------------------------------------------------------
-    //  Zero-current calibration
-    //  SSRs are off at boot — average 200 samples to find the actual quiescent
-    //  voltage of this specific sensor (ACS758 tolerance ±1% on VREF).
-    // -----------------------------------------------------------------------
     Serial.println("[CURRENT] Calibrating zero reference...");
-    float vref_sum = 0;
-    for (int i = 0; i < 200; i++) {
-        float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
+    float vref_sum = 0.0f;
+    for (int i = 0; i < 200; ++i) {
+        const float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
         vref_sum += v_adc / CURRENT_DIVIDER_RATIO;
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(TASK_CURRENT_BOOT_CAL_MS));
     }
-    float vref_actual = vref_sum / 200.0f;
 
-    // Derive actual VCC from measured VREF (ACS758: VREF = VCC/2)
-    float vcc_actual = vref_actual * 2.0f;
-    // Sensitivity scales linearly with VCC (spec is 40mV/A at 5V)
-    float sensitivity_actual = ACS758_SENSITIVITY * (vcc_actual / 5.0f);
+    const float vref_actual = vref_sum / 200.0f;
+    const float vcc_actual = vref_actual * 2.0f;
+    const float sensitivity_actual = ACS758_SENSITIVITY * (vcc_actual / 5.0f);
 
     Serial.printf("[CURRENT] Calibrated VREF = %.3fV (expected %.3fV)\n",
-                  vref_actual, ACS758_VREF);
-    Serial.printf("[CURRENT] VCC = %.3fV  sensitivity = %.1f mV/A (nominal 40.0)\n",
-                  vcc_actual, sensitivity_actual * 1000.0f);
+                  vref_actual,
+                  ACS758_VREF);
+    Serial.printf("[CURRENT] VCC = %.3fV  sensitivity = %.1f mV/A "
+                  "(nominal 40.0)\n",
+                  vcc_actual,
+                  sensitivity_actual * 1000.0f);
     Serial.println("[CURRENT] Task started");
 
-    for(;;) {
-        float sumSq = 0;
+    for (;;) {
+        float sumSq = 0.0f;
 
-        // Sample the ADC to capture AC waveform (50 Hz)
-        for (int i = 0; i < numSamples; i++) {
-            float v_adc = (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
-            float v_sensor = v_adc / CURRENT_DIVIDER_RATIO;
-            float current_instant = (v_sensor - vref_actual) / sensitivity_actual;
-            sumSq += (current_instant * current_instant);
-            vTaskDelay(pdMS_TO_TICKS(1));
+        for (int i = 0; i < numSamples; ++i) {
+            const float v_adc =
+                (analogRead(PIN_CURRENT_SENSOR) / 4095.0f) * 3.3f;
+            const float v_sensor = v_adc / CURRENT_DIVIDER_RATIO;
+            const float current_instant =
+                (v_sensor - vref_actual) / sensitivity_actual;
+            sumSq += current_instant * current_instant;
+            vTaskDelay(pdMS_TO_TICKS(TASK_CURRENT_SAMPLE_MS));
         }
 
         float rms_current = sqrtf(sumSq / numSamples);
+        if (rms_current < 0.2f) {
+            rms_current = 0.0f;
+        }
 
-        // Filter noise floor
-        if (rms_current < 0.2f) rms_current = 0.0f;
+        SensorSnapshot snapshot{};
+        SlaveState_ReadSensors(snapshot);
+        snapshot.currentRmsA = rms_current;
+        snapshot.powerW = rms_current * 220.0f;
+        snapshot.updatedAtTick = xTaskGetTickCount();
+        snapshot.valid = true;
+        SlaveState_UpdateSensors(snapshot);
 
-        current_rms  = rms_current;
-        power_watts  = current_rms * 220.0f;
-
-        vTaskDelay(pdMS_TO_TICKS(500));
+        vTaskDelay(pdMS_TO_TICKS(TASK_CURRENT_PERIOD_MS));
     }
 }

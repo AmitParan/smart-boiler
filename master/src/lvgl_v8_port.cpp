@@ -794,11 +794,15 @@ bool lvgl_port_init(LCD *lcd, Touch *tp)
     lvgl_mux = xSemaphoreCreateRecursiveMutex();
     ESP_UTILS_CHECK_NULL_RETURN(lvgl_mux, false, "Create LVGL mutex failed");
 
+#if LVGL_PORT_CREATE_TASK
     ESP_UTILS_LOGD("Create LVGL task");
     BaseType_t core_id = (LVGL_PORT_TASK_CORE < 0) ? tskNO_AFFINITY : LVGL_PORT_TASK_CORE;
     BaseType_t ret = xTaskCreatePinnedToCore(lvgl_port_task, "lvgl", LVGL_PORT_TASK_STACK_SIZE, NULL,
                      LVGL_PORT_TASK_PRIORITY, &lvgl_task_handle, core_id);
     ESP_UTILS_CHECK_FALSE_RETURN(ret == pdPASS, false, "Create LVGL task failed");
+#else
+    ESP_UTILS_LOGD("LVGL task creation disabled; TaskUi owns lv_timer_handler()");
+#endif
 
 #if LVGL_PORT_AVOID_TEAR
     lcd->attachRefreshFinishCallback(onLcdVsyncCallback, (void *)lvgl_task_handle);

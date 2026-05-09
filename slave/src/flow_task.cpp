@@ -1,38 +1,49 @@
 #include "flow_task.h"
-#include "config.h"
-#include "shared_data.h"
-#include <Arduino.h>
 
-// Internal variable for pulse counting (only this file knows it)
+#include <Arduino.h>
+#include "config.h"
+#include "shared/slave_state.h"
+#include "shared_data.h"   // timerMux only; ISR pulse count remains isolated
+#include "task_config.h"
+
+// Internal variable for pulse counting. Only this file and the ISR touch it.
 volatile int flow_pulse_count = 0;
 
-// Interrupt
 void IRAM_ATTR pulseCounter() {
     portENTER_CRITICAL_ISR(&timerMux);
     flow_pulse_count++;
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-void TaskFlow(void * pvParameters) {
+void TaskFlow(void* pvParameters) {
+    (void)pvParameters;
+
     pinMode(PIN_FLOW_SENSOR, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(PIN_FLOW_SENSOR), pulseCounter, RISING);
+    attachInterrupt(digitalPinToInterrupt(PIN_FLOW_SENSOR),
+                    pulseCounter,
+                    RISING);
 
-    for(;;) {
-        // Measure for one second
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    Serial.println("[FLOW] Task started");
 
-        // Safe read and reset
-        int local_count;
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(TASK_FLOW_PERIOD_MS));
+
+        int local_count = 0;
         portENTER_CRITICAL(&timerMux);
         local_count = flow_pulse_count;
         flow_pulse_count = 0;
         portEXIT_CRITICAL(&timerMux);
 
-        // Calculation (calibrated for YF-B6)
-        float flow = ((float)local_count) / 6.6;
-        if(flow < 0.5) flow = 0.0; // Filter noise
+        float flow = ((float)local_count) / 6.6f;
+        if (flow < 0.5f) {
+            flow = 0.0f;
+        }
 
-        // Update shared variable
-        current_flow = flow;
+        SensorSnapshot snapshot{};
+        SlaveState_ReadSensors(snapshot);
+        snapshot.flowLpm = flow;
+        snapshot.updatedAtTick = xTaskGetTickCount();
+        snapshot.valid = true;
+        SlaveState_UpdateSensors(snapshot);
     }
 }
