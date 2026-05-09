@@ -19,6 +19,7 @@
 #define TASK_MASTER_COMMS_STACK_WORDS 4096
 #define TASK_UI_STACK_WORDS           8192
 #define TASK_NETWORK_STACK_WORDS      6144
+#define TASK_SMART_BRAIN_STACK_WORDS  4096
 
 // ---------------------------------------------------------------------------
 //  Task priorities.
@@ -28,6 +29,7 @@
 #define TASK_MASTER_COMMS_PRIORITY    2
 #define TASK_UI_PRIORITY              2
 #define TASK_NETWORK_PRIORITY         1
+#define TASK_SMART_BRAIN_PRIORITY     1   // lower than control tasks — prediction only
 
 // ---------------------------------------------------------------------------
 //  ESP32-S3 core affinity.
@@ -38,6 +40,7 @@
 #define TASK_CORE_MASTER_COMMS        1
 #define TASK_CORE_BRAIN               1
 #define TASK_CORE_UI                  1
+#define TASK_CORE_SMART_BRAIN         1
 
 // ---------------------------------------------------------------------------
 //  Periodic task timing.
@@ -52,6 +55,8 @@
 #define TASK_CLOCK_UPDATE_PERIOD_MS   1000u
 #define TASK_NTP_RESYNC_PERIOD_MS     3600000UL
 #define TASK_WEATHER_PERIOD_MS        600000UL
+#define TASK_SMART_BRAIN_PERIOD_MS    60000UL   // decision check every 60 s
+#define TASK_SMART_BRAIN_LEAD_MIN     30u       // default: start heating 30 min early
 
 // ---------------------------------------------------------------------------
 //  PLC protocol timing and link supervision.
@@ -77,5 +82,6 @@ extern TaskHandle_t g_taskBrainHandle;
 extern TaskHandle_t g_taskMasterCommsHandle;
 extern TaskHandle_t g_taskUiHandle;
 extern TaskHandle_t g_taskNetworkHandle;
+extern TaskHandle_t g_taskSmartBrainHandle;
 
 #endif // TASK_CONFIG_H

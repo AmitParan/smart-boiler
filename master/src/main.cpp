@@ -9,6 +9,7 @@
 #include "task_config.h"
 #include "tasks/TaskBrain.h"
 #include "tasks/TaskMasterComms.h"
+#include "tasks/TaskSmartBrain.h"
 #include "ui_manager.h"
 
 // ===========================================================================
@@ -18,6 +19,7 @@ TaskHandle_t g_taskBrainHandle = nullptr;
 TaskHandle_t g_taskMasterCommsHandle = nullptr;
 TaskHandle_t g_taskUiHandle = nullptr;
 TaskHandle_t g_taskNetworkHandle = nullptr;
+TaskHandle_t g_taskSmartBrainHandle = nullptr;
 
 namespace {
 
@@ -139,6 +141,13 @@ void setup() {
                      TASK_NETWORK_PRIORITY,
                      TASK_CORE_NETWORK,
                      &g_taskNetworkHandle);
+
+    createTaskPinned(TaskSmartBrain,
+                     "SmartBrain",
+                     TASK_SMART_BRAIN_STACK_WORDS,
+                     TASK_SMART_BRAIN_PRIORITY,
+                     TASK_CORE_SMART_BRAIN,
+                     &g_taskSmartBrainHandle);
 
     Serial.println("[BOOT] Master FreeRTOS shell ready");
 }
