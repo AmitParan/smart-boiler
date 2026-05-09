@@ -5,6 +5,7 @@
 #include "brain/event_log.h"
 #include "brain/shower_histogram.h"
 #include "brain/heatup_tracker.h"
+#include "brain/brain_settings.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
@@ -104,6 +105,18 @@ void setup() {
     HeatupTracker::init();
     Serial.printf("[BOOT] HeatupTracker ready: %u session(s), lead=%u min\n",
                   HeatupTracker::sessionCount(), HeatupTracker::getLeadTimeMinutes());
+
+    // Brain user settings — ready-by times (Phase 6)
+    BrainSettings::init();
+    {
+        uint16_t rbMin = 0u;
+        if (BrainSettings::getReadyByForToday(rbMin)) {
+            char buf[6]; BrainSettings::minuteToString(rbMin, buf, sizeof(buf));
+            Serial.printf("[BOOT] Ready-by today: %s\n", buf);
+        } else {
+            Serial.println("[BOOT] Ready-by: not set");
+        }
+    }
 
     // -----------------------------------------------------------------------
     //  Shared state initialization

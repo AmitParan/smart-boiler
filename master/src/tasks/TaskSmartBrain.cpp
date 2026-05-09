@@ -24,6 +24,7 @@
 #include "brain/shower_histogram.h"
 #include "brain/event_log.h"
 #include "brain/heatup_tracker.h"
+#include "brain/brain_settings.h"
 #include "ui_manager.h"
 
 // ---------------------------------------------------------------------------
@@ -102,9 +103,13 @@ void TaskSmartBrain(void* pvParameters) {
         }
 
         // -----------------------------------------------------------------
-        // 3. DATA CHECK — histogram must be reliable before making predictions
+        // 3. DATA CHECK — skip if histogram not reliable YET, but bypass
+        //    entirely when a fixed ready-by time is set (Phase 6).
         // -----------------------------------------------------------------
-        if (!ShowerHistogram::isReliable()) {
+        uint16_t readyByMin = 0u;
+        const bool hasReadyBy = BrainSettings::getReadyByForToday(readyByMin);
+
+        if (!hasReadyBy && !ShowerHistogram::isReliable()) {
             uint8_t  slot  = 0u;
             uint16_t count = 0u;
             ShowerHistogram::findPeak(slot, count);
@@ -115,13 +120,16 @@ void TaskSmartBrain(void* pvParameters) {
         }
 
         // -----------------------------------------------------------------
-        // 4. WINDOW CHECK — are we within lead_time minutes before the peak?
+        // 4. WINDOW CHECK — determine target minute and lead time
         // -----------------------------------------------------------------
         uint8_t  peakSlot  = 0u;
         uint16_t peakCount = 0u;
         ShowerHistogram::findPeak(peakSlot, peakCount);
 
-        const uint16_t peakMinute = ShowerHistogram::slotCentreMinutes(peakSlot);
+        // Ready-by override (Phase 6) takes priority over histogram peak.
+        const uint16_t peakMinute = hasReadyBy
+                                    ? readyByMin
+                                    : ShowerHistogram::slotCentreMinutes(peakSlot);
 
         // Base lead time from HeatupTracker (adaptive, Phase 4)
         uint16_t leadMin = (uint16_t)HeatupTracker::getLeadTimeMinutes();

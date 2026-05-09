@@ -14,6 +14,8 @@
 #include "boiler_protocol.h"
 #include "shared/master_state.h"
 #include "task_config.h"
+#include "brain/brain_settings.h"
+#include "brain/event_log.h"
 
 #define WEATHER_API_KEY      "7a1028898a2cdcc08a58a8109fb061e4"  // local only - do not commit
 #define WEATHER_CITY         "Tel Aviv"
@@ -86,6 +88,13 @@ static lv_obj_t* temp_circle_obj      = NULL;
 static lv_obj_t* lbl_power_val  = NULL;
 static lv_obj_t* lbl_flow_val   = NULL;
 static lv_obj_t* lbl_plc_status = NULL;
+
+// Ready By modal widgets
+static lv_obj_t* ready_by_modal  = NULL;
+static lv_obj_t* lbl_rb_hour     = NULL;
+static lv_obj_t* lbl_rb_minute   = NULL;
+static int       rb_hour         = 7;
+static int       rb_minute       = 0;
 
 // ---------------------------------------------------------------------------
 //  State
@@ -718,6 +727,140 @@ void UI_Init() {
     lv_obj_set_size(divider, 220, 1);
     lv_obj_set_style_bg_color(divider, lv_color_hex(0xE0E0E0), 0);
     lv_obj_set_style_border_width(divider, 0, 0);
+
+    // Row 3: Ready By button
+    lv_obj_t* btn_ready_by = lv_btn_create(shower_card);
+    disableScroll(btn_ready_by);
+    lv_obj_set_size(btn_ready_by, 200, 36);
+    lv_obj_set_style_radius(btn_ready_by, 18, 0);
+    lv_obj_set_style_bg_color(btn_ready_by, CLR_ACCENT, 0);
+    lv_obj_add_event_cb(btn_ready_by, [](lv_event_t* e) {
+        last_touch_time = millis();
+        if (ready_by_modal != NULL) lv_obj_clear_flag(ready_by_modal, LV_OBJ_FLAG_HIDDEN);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_rb_btn = lv_label_create(btn_ready_by);
+    lv_label_set_text(lbl_rb_btn, LV_SYMBOL_BELL "  Ready By");
+    lv_obj_set_style_text_font(lbl_rb_btn, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_rb_btn, lv_color_white(), 0);
+    lv_obj_center(lbl_rb_btn);
+
+    // ===================================================================
+    //  READY BY MODAL  — time picker overlay
+    // ===================================================================
+    ready_by_modal = lv_obj_create(scr);
+    disableScroll(ready_by_modal);
+    lv_obj_set_size(ready_by_modal, 360, 280);
+    lv_obj_center(ready_by_modal);
+    lv_obj_set_style_radius(ready_by_modal, 24, 0);
+    lv_obj_set_style_bg_color(ready_by_modal, lv_color_white(), 0);
+    lv_obj_set_style_shadow_width(ready_by_modal, 32, 0);
+    lv_obj_set_style_shadow_opa(ready_by_modal, LV_OPA_30, 0);
+    lv_obj_add_flag(ready_by_modal, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* lbl_rb_title = lv_label_create(ready_by_modal);
+    lv_label_set_text(lbl_rb_title, "Set Ready-By Time");
+    lv_obj_set_style_text_font(lbl_rb_title, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_rb_title, CLR_TEXT, 0);
+    lv_obj_align(lbl_rb_title, LV_ALIGN_TOP_MID, 0, 16);
+
+    // Hour controls
+    lv_obj_t* btn_h_up = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_h_up, 56, 40);
+    lv_obj_align(btn_h_up, LV_ALIGN_CENTER, -70, -40);
+    lv_obj_set_style_bg_color(btn_h_up, CLR_ACCENT, 0);
+    lv_obj_add_event_cb(btn_h_up, [](lv_event_t*) {
+        rb_hour = (rb_hour + 1) % 24;
+        char buf[4]; snprintf(buf, sizeof(buf), "%02d", rb_hour);
+        lv_label_set_text(lbl_rb_hour, buf);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* l = lv_label_create(btn_h_up); lv_label_set_text(l, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(l, lv_color_white(), 0); lv_obj_center(l);
+
+    lbl_rb_hour = lv_label_create(ready_by_modal);
+    char hbuf[4]; snprintf(hbuf, sizeof(hbuf), "%02d", rb_hour);
+    lv_label_set_text(lbl_rb_hour, hbuf);
+    lv_obj_set_style_text_font(lbl_rb_hour, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(lbl_rb_hour, CLR_TEXT, 0);
+    lv_obj_align(lbl_rb_hour, LV_ALIGN_CENTER, -70, 10);
+
+    lv_obj_t* btn_h_dn = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_h_dn, 56, 40);
+    lv_obj_align(btn_h_dn, LV_ALIGN_CENTER, -70, 58);
+    lv_obj_set_style_bg_color(btn_h_dn, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_add_event_cb(btn_h_dn, [](lv_event_t*) {
+        rb_hour = (rb_hour + 23) % 24;
+        char buf[4]; snprintf(buf, sizeof(buf), "%02d", rb_hour);
+        lv_label_set_text(lbl_rb_hour, buf);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* l2 = lv_label_create(btn_h_dn); lv_label_set_text(l2, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(l2, CLR_TEXT, 0); lv_obj_center(l2);
+
+    // Colon separator
+    lv_obj_t* lbl_colon = lv_label_create(ready_by_modal);
+    lv_label_set_text(lbl_colon, ":");
+    lv_obj_set_style_text_font(lbl_colon, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(lbl_colon, CLR_TEXT, 0);
+    lv_obj_align(lbl_colon, LV_ALIGN_CENTER, 0, 10);
+
+    // Minute controls
+    lv_obj_t* btn_m_up = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_m_up, 56, 40);
+    lv_obj_align(btn_m_up, LV_ALIGN_CENTER, 70, -40);
+    lv_obj_set_style_bg_color(btn_m_up, CLR_ACCENT, 0);
+    lv_obj_add_event_cb(btn_m_up, [](lv_event_t*) {
+        rb_minute = (rb_minute + 5) % 60;
+        char buf[4]; snprintf(buf, sizeof(buf), "%02d", rb_minute);
+        lv_label_set_text(lbl_rb_minute, buf);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* l3 = lv_label_create(btn_m_up); lv_label_set_text(l3, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(l3, lv_color_white(), 0); lv_obj_center(l3);
+
+    lbl_rb_minute = lv_label_create(ready_by_modal);
+    char mbuf[4]; snprintf(mbuf, sizeof(mbuf), "%02d", rb_minute);
+    lv_label_set_text(lbl_rb_minute, mbuf);
+    lv_obj_set_style_text_font(lbl_rb_minute, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(lbl_rb_minute, CLR_TEXT, 0);
+    lv_obj_align(lbl_rb_minute, LV_ALIGN_CENTER, 70, 10);
+
+    lv_obj_t* btn_m_dn = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_m_dn, 56, 40);
+    lv_obj_align(btn_m_dn, LV_ALIGN_CENTER, 70, 58);
+    lv_obj_set_style_bg_color(btn_m_dn, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_add_event_cb(btn_m_dn, [](lv_event_t*) {
+        rb_minute = (rb_minute + 55) % 60;
+        char buf[4]; snprintf(buf, sizeof(buf), "%02d", rb_minute);
+        lv_label_set_text(lbl_rb_minute, buf);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* l4 = lv_label_create(btn_m_dn); lv_label_set_text(l4, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(l4, CLR_TEXT, 0); lv_obj_center(l4);
+
+    // Save + Cancel buttons
+    lv_obj_t* btn_rb_save = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_rb_save, 130, 38);
+    lv_obj_align(btn_rb_save, LV_ALIGN_BOTTOM_LEFT, 20, -14);
+    lv_obj_set_style_bg_color(btn_rb_save, CLR_ON, 0);
+    lv_obj_add_event_cb(btn_rb_save, [](lv_event_t*) {
+        const uint16_t totalMin = (uint16_t)(rb_hour * 60 + rb_minute);
+        BrainSettings::setWeekdayReadyBy(totalMin);
+        BrainSettings::setWeekendReadyBy(totalMin);
+        EventLog::append(BoilerEvent::TARGET_TIME_SET, (float)totalMin);
+        lv_obj_add_flag(ready_by_modal, LV_OBJ_FLAG_HIDDEN);
+        Serial.printf("[UI] Ready-by saved: %02d:%02d\n", rb_hour, rb_minute);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_save = lv_label_create(btn_rb_save);
+    lv_label_set_text(lbl_save, LV_SYMBOL_OK "  Save");
+    lv_obj_set_style_text_color(lbl_save, lv_color_white(), 0); lv_obj_center(lbl_save);
+
+    lv_obj_t* btn_rb_cancel = lv_btn_create(ready_by_modal);
+    lv_obj_set_size(btn_rb_cancel, 130, 38);
+    lv_obj_align(btn_rb_cancel, LV_ALIGN_BOTTOM_RIGHT, -20, -14);
+    lv_obj_set_style_bg_color(btn_rb_cancel, lv_color_hex(0xE0E0E0), 0);
+    lv_obj_add_event_cb(btn_rb_cancel, [](lv_event_t*) {
+        lv_obj_add_flag(ready_by_modal, LV_OBJ_FLAG_HIDDEN);
+    }, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_cancel = lv_label_create(btn_rb_cancel);
+    lv_label_set_text(lbl_cancel, LV_SYMBOL_CLOSE "  Cancel");
+    lv_obj_set_style_text_color(lbl_cancel, CLR_TEXT, 0); lv_obj_center(lbl_cancel);
 
     // ===================================================================
     //  INFO BAR  (800 x 40, below main row) — power, flow rate, PLC status
