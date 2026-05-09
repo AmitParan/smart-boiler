@@ -77,6 +77,7 @@ lv_obj_t* led_ssr_internal = NULL;
 lv_obj_t* led_ssr_boost    = NULL;
 
 // Consumer shower card sub-widgets
+static lv_obj_t* shower_card_obj      = NULL;
 static lv_obj_t* lbl_shower_readiness = NULL;
 static lv_obj_t* lbl_flow_status      = NULL;  // "● Flow Active" / "○ No Flow"
 static lv_obj_t* temp_circle_obj      = NULL;
@@ -677,7 +678,8 @@ void UI_Init() {
     lv_obj_center(lbl_power_status);
 
     // Shower Readiness card  (260 x 185)
-    lv_obj_t* shower_card = lv_obj_create(right_panel);
+    shower_card_obj = lv_obj_create(right_panel);
+    lv_obj_t* shower_card = shower_card_obj;
     disableScroll(shower_card);
     lv_obj_set_size(shower_card, 260, 185);
     lv_obj_set_style_radius(shower_card, 24, 0);
@@ -921,16 +923,27 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
                 lv_obj_set_style_border_color(temp_circle_obj, ring_col, 0);
         }
 
-        // Shower Readiness
+        // Shower Readiness — card turns green when hot water is available
+        if (shower_card_obj != NULL) {
+            if (showers >= 1) {
+                lv_obj_set_style_bg_color(shower_card_obj, lv_color_hex(0xE8F5E9), 0);
+                lv_obj_set_style_border_color(shower_card_obj, lv_color_hex(0x2E7D32), 0);
+            } else {
+                lv_obj_set_style_bg_color(shower_card_obj, lv_color_white(), 0);
+                lv_obj_set_style_border_color(shower_card_obj, lv_color_hex(0xE0E0E0), 0);
+            }
+        }
         if (lbl_shower_readiness != NULL) {
             if (showers >= 1) {
-                char msg[32];
-                snprintf(msg, sizeof(msg), "%d Shower%s Ready",
+                char msg[40];
+                snprintf(msg, sizeof(msg), LV_SYMBOL_OK "  %d Shower%s Ready!",
                          showers, showers > 1 ? "s" : "");
                 lv_label_set_text(lbl_shower_readiness, msg);
+                lv_obj_set_style_text_font(lbl_shower_readiness, &lv_font_montserrat_24, 0);
                 lv_obj_set_style_text_color(lbl_shower_readiness, CLR_READY, 0);
             } else {
                 lv_label_set_text(lbl_shower_readiness, "Heating Up...");
+                lv_obj_set_style_text_font(lbl_shower_readiness, &lv_font_montserrat_20, 0);
                 lv_obj_set_style_text_color(lbl_shower_readiness, CLR_WAITING, 0);
             }
         }
