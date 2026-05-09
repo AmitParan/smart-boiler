@@ -236,13 +236,49 @@ Datasheets folder: `datasheets/` — component datasheets (to be added)
 
 ---
 
-## Current Status (April 27, 2026)
+---
 
-✅ Master boots, connects WiFi, syncs NTP, shows UI  
-✅ Slave boots, all FreeRTOS tasks running on Core 0  
-✅ PLC communication working: CMD every 1s, STATUS reply received  
-✅ Current sensor calibrated, reads 0W at idle  
-❌ Temp sensors not connected (reading -127°C)  
-❌ Flow sensor not connected (reading 0.0 L/min)  
-❌ SSRs not tested under load  
-❌ UI not yet updating from received sensor data  
+## Current Status (May 9, 2026)
+
+### Hardware Testing
+| Component | Status | Notes |
+|-----------|--------|-------|
+| PLC communication (master ↔ slave) | ✅ Verified | CMD every 1s, STATUS reply, CRC-8, sequence numbers |
+| DS18B20 temperature sensors | ✅ Working | 3 sensors on one wire, 10-bit resolution |
+| YF-B6 flow sensor | ✅ Working | Interrupt-driven pulse counter |
+| ACS758 current sensor | ⚠️ Calibrated, not load-tested | Auto-calibrates VREF and sensitivity at boot |
+| SSR internal heater | ❌ Not tested | Needs LED/lamp test before real load |
+| SSR boost heater | ❌ Not tested | Flow interlock confirmed by safety task |
+| Hardware safety circuit (LM393N, watchdog caps, BS170) | ❌ Not tested | Plan: disconnect NTC wire to trip thermal cutoff |
+
+### Software
+| Feature | Status | Notes |
+|---------|--------|-------|
+| SystemManager state machine | ✅ Verified | 11/11 test scenarios PASS |
+| UI dashboard | ✅ Working | Touch, ON/OFF, target temp, info bar |
+| FreeRTOS architecture refactor | 🔄 In progress | `freertos-refactor` branch |
+| Smart decision tree (user data collection) | ❌ Not started | See Roadmap below |
+| PLC protocol documentation | ❌ Not written | See Roadmap below |
+| Datasheets folder | ❌ Not added | |
+
+---
+
+## Roadmap
+
+### Immediate (hardware)
+- [ ] SSR test with LED on GPIO4/GPIO5 (control side, no 220V)
+- [ ] SSR test with 220V indicator lamp (output side)
+- [ ] Hardware safety circuit test (disconnect NTC wire to trip LM393N)
+- [ ] Current sensor validation under real heater load
+
+### Software — next features
+- [ ] **PLC protocol documentation** — write full spec for the binary protocol: packet format, field encoding, CRC calculation, request-response timing, error handling. Store in `docs/plc-protocol.md`
+- [ ] **Merge `freertos-refactor` → `main_master_slave`** — review changes, re-add hardware folder (was accidentally deleted in that branch)
+- [ ] **Smart decision tree / user learning system:**
+  - Collect usage patterns: time of day user turns boiler on, typical session duration, typical target temp
+  - Store events in SPIFFS with timestamp (on/off, temp set, flow detected)
+  - After enough data: predict when user normally showers and pre-heat automatically
+  - V1: simple schedule learning (store last 7 days, find repeating pattern)
+  - V2: adaptive PID — adjust pre-heat lead time based on measured heat-up rate
+- [ ] Persist `target_temperature` to SPIFFS (resets to 60°C on reboot)
+- [ ] Move weather API key from `ui_manager.cpp` to `secrets.h` (security)
