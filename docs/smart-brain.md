@@ -1,6 +1,6 @@
 # Smart Boiler — Decision Tree & Learning Brain
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Last updated:** May 9, 2026  
 **Status:** Design phase — not yet implemented
 
@@ -36,6 +36,19 @@ The master also has:
 - **Real-time clock** (NTP synced) → exact timestamp for every event
 - **WiFi** → can report data or receive updates
 - **SPIFFS flash storage** → can persist data across reboots
+- **Weather API** (OpenWeatherMap, fetched every 10 min) → outdoor temperature, forecast, cloud cover, UV index
+
+### What Weather Data Gives Us
+The outdoor temperature directly affects how much heating work the system needs to do:
+
+| Condition | Effect on system |
+|-----------|------------------|
+| Hot summer day (35°C+) | Pipes and inlet water warm naturally — boost gap is smaller, start later |
+| Cold winter morning (5°C) | Inlet water is cold — need more heating, start earlier |
+| Sunny forecast | Solar gain on pipes/tank — may reduce required lead time |
+| Cloud cover | No passive solar help — use full lead time |
+
+The system already fetches `temp`, `weather description`, and forecast from OpenWeatherMap. The brain will use this to adjust the pre-heat start time dynamically.
 
 ---
 
@@ -54,6 +67,8 @@ enum class BoilerEvent : uint8_t {
     TEMP_SET       = 0x05,  // user changed target shower temperature
     AUTO_PREHEAT   = 0x06,  // system auto-started pre-heat (brain decision)
     TANK_READY     = 0x07,  // tank reached target temperature
+    TARGET_TIME_SET = 0x08, // user set a fixed ready-by time
+    WEATHER_ADJUST  = 0x09, // brain adjusted lead time due to weather
 };
 
 struct BoilerEventRecord {
@@ -93,6 +108,90 @@ Events are appended to a circular log in SPIFFS: `events.bin`
 19:00–19:15  █ 1
 ```
 → Schedule auto pre-heat at 05:40 (20 min lead time)
+
+### V3 — Weather-Adjusted Lead Time
+
+**Question:** "Given today's outdoor temperature, how much of the heating work can nature do for free?"
+
+**How it works:**
+
+The cold water entering the boiler is not always the same temperature. In summer, pipes sitting in the sun warm up to 25–30°C. In winter, groundwater and shaded pipes may be 12–15°C. This directly changes how much energy the heater needs to add.
+
+The brain uses the outdoor temperature from the weather API as a proxy for inlet water temperature:
+
+```
+inlet_temp_estimate = BASE_INLET_TEMP + (outdoor_temp - 20°C) × PIPE_FACTOR
+```
+
+Where `BASE_INLET_TEMP` = 18°C (calibrated from observed tank cool-down rate), `PIPE_FACTOR` = 0.3 (empirical — pipes don't track outdoor temp 1:1).
+
+**Effect on lead time:**
+```
+Warm day (32°C outdoor):  inlet ≈ 21.6°C  → gap to 55°C = 33.4°C  → lead time: 14 min
+Cold day (8°C outdoor):   inlet ≈ 15.6°C  → gap to 55°C = 39.4°C  → lead time: 19 min
+```
+
+The system logs a `WEATHER_ADJUST` event every time it changes the pre-heat start time based on weather, so you can audit it.
+
+**Sunny day bonus (cloud cover < 20%):**  
+If the forecast shows clear sky AND outdoor temp > 28°C, the system adds an extra 5-minute delay before starting pre-heat (passive solar may do part of the work first). It monitors whether the tank temp rises on its own — if it does, it delays further. If not, it starts normally.
+
+---
+
+### V4 — User-Defined Target Time (Fixed Schedule Override)
+
+**Question:** "What if the user already knows exactly when they want hot water?"
+
+The learning system is powerful but takes 7 days. Some users just want to set a time. This feature gives them that — and the brain still makes it energy-optimal.
+
+**How it works:**
+
+The user sets a "ready-by" time on the touchscreen — for example, `07:00`. The brain then:
+
+1. Reads the current tank temperature
+2. Reads the target shower temperature (from UI slider)
+3. Estimates the heat-up gap: `gap = target_temp - tank_temp`
+4. Looks up the rolling average lead time from history (or uses default 20 min if no history)
+5. Adjusts lead time for today's weather (V3 logic above)
+6. Calculates: `start_time = ready_by_time - adjusted_lead_time`
+7. Waits until `start_time`, then turns boiler ON
+
+**Example:**
+```
+User sets ready-by: 07:00
+Current tank: 40°C  →  target: 55°C  →  gap: 15°C
+Rolling average heat-up: 18 min
+Weather today: 30°C outdoor → inlet warm → adjust: -3 min
+Adjusted lead time: 15 min
+System starts at: 06:45
+```
+
+**Per-day-of-week schedule:**  
+Users can set different times for weekdays vs weekends:
+```
+Mon–Fri: ready at 07:00
+Sat–Sun: ready at 09:00
+```
+
+**Target time + learned schedule interaction:**
+- If user has set a fixed time → fixed time takes priority, learning supplements it
+- If no fixed time is set → learned histogram drives the schedule
+- If both predict the same window → confirm the pattern, no change
+- If they conflict → fixed time wins, log the conflict for the user to see
+
+**Energy optimization with fixed time:**  
+The system does not simply turn ON at the calculated start time and wait. It monitors the tank temperature in real time:
+```
+start_time = 06:45
+
+06:45: tank = 40°C → turn ON (internal heater 100%)
+06:52: tank = 48°C → still heating
+06:58: tank = 54°C → almost there, slow down (reduce to 60% PWM if near target)
+07:00: tank = 55°C → TANK_READY event logged, heater OFF, standby
+```
+This prevents overshooting (wasted energy heating beyond the target).
+
+---
 
 ### V2 — Adaptive Lead Time
 
@@ -179,6 +278,8 @@ The master touchscreen needs to show the brain's state and allow the user to con
 |---------|----------|---------|
 | "Auto" indicator | Top bar | Shows when auto pre-heat is active |
 | Schedule card | Right panel | Shows predicted shower time and lead time |
+| **"Ready By" time picker** | Settings screen | User sets fixed target time (hour:min, per weekday/weekend) |
+| **Weather influence indicator** | Schedule card | Shows "☀️ Adjusted -3 min" or "❄️ Adjusted +4 min" |
 | Learning progress | Settings screen | "Learning: Day 4 of 7" |
 | Override button | Schedule card | "Disable auto today" |
 | History graph | Settings screen | Bar chart of shower times this week |
@@ -212,7 +313,22 @@ The master touchscreen needs to show the brain's state and allow the user to con
 - [ ] Store rolling average in `heatup.bin`
 - [ ] Replace fixed 20-min lead time with measured average + 3 min margin
 
-### Phase 5 — UI
+### Phase 5 — Weather adjustment
+- [ ] Wire OpenWeatherMap outdoor temp into the brain (already fetched in `ui_manager.cpp`)
+- [ ] Implement `inlet_temp_estimate()` function
+- [ ] Adjust lead time based on estimated inlet temperature
+- [ ] Add sunny-day passive delay logic (cloud cover check)
+- [ ] Log `WEATHER_ADJUST` events
+
+### Phase 6 — User-defined target time
+- [ ] Add "Ready By" time picker to settings screen (hour + minute, per weekday/weekend)
+- [ ] Persist target times to `settings.bin` in SPIFFS
+- [ ] Brain reads target time on startup and after UI change
+- [ ] Implement back-calculation: `start_time = ready_by - adjusted_lead_time`
+- [ ] Implement real-time temperature monitoring during heat-up (prevent overshoot)
+- [ ] Handle conflict between fixed time and learned histogram
+
+### Phase 7 — UI
 - [ ] Add schedule card to right panel
 - [ ] Add learning progress indicator
 - [ ] Add settings screen with on/off toggle
