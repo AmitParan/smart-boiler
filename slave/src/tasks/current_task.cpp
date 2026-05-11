@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "shared/slave_state.h"
+#include "state/slave_state.h"
 #include "task_config.h"
 
 static const int numSamples = 100;

@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "shared/slave_state.h"
-#include "shared_data.h"   // timerMux only; ISR pulse count remains isolated
+#include "state/slave_state.h"
+#include "state/shared_data.h"   // timerMux only; ISR pulse count remains isolated
 #include "task_config.h"
 
 // Internal variable for pulse counting. Only this file and the ISR touch it.

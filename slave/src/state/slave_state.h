@@ -1,7 +1,7 @@
 #ifndef SLAVE_STATE_H
 #define SLAVE_STATE_H
 
-#include "shared/slave_snapshots.h"
+#include "slave_snapshots.h"
 
 bool SlaveState_Init();
 

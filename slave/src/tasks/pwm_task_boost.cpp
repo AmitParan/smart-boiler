@@ -3,8 +3,8 @@
 #include <Arduino.h>
 #include "boiler_protocol.h"
 #include "config.h"
-#include "shared/slave_state.h"
-#include "shared_data.h"   // legacy SSR status/fault flags until PLC is refactored
+#include "state/slave_state.h"
+#include "state/shared_data.h"   // legacy SSR status/fault flags until PLC is refactored
 #include "task_config.h"
 
 namespace {

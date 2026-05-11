@@ -2,8 +2,8 @@
 
 #include <Arduino.h>
 #include "config.h"
-#include "shared/slave_state.h"
-#include "shared_data.h"   // legacy SSR/fault status flags until final cleanup
+#include "state/slave_state.h"
+#include "state/shared_data.h"   // legacy SSR/fault status flags until final cleanup
 #include "task_config.h"
 
 // ---------------------------------------------------------------------------

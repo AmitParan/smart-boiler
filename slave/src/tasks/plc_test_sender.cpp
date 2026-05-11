@@ -8,7 +8,7 @@
 // =============================================================================
 #include "plc_test_sender.h"
 #include "plc_comms.h"
-#include "shared_data.h"
+#include "state/shared_data.h"
 #include "boiler_protocol.h"
 #include "config.h"
 #include <Arduino.h>

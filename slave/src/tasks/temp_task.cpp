@@ -3,7 +3,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include "config.h"
-#include "shared/slave_state.h"
+#include "state/slave_state.h"
 #include "task_config.h"
 
 OneWire oneWire(PIN_TEMP_BUS);

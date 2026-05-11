@@ -13,14 +13,23 @@
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
-//  Stack sizes, in words as expected by xTaskCreatePinnedToCore().
+//  Stack sizes in bytes (ESP32-Arduino uses bytes, not 4-byte words).
+//
+//  Rationale per task:
+//    Flow    1536 — ISR counter + one float division + queue write. No printf.
+//    Temp    2048 — DallasTemperature/OneWire nests ~5 calls deep (~1.2 KB).
+//    Current 4096 — 100-sample RMS loop, sqrt(), Serial.printf at boot cal.
+//    Safety  4096 — Priority-4 critical path; multiple Serial.printf (~1 KB each).
+//    PWM_Int 2048 — ledcWrite + queue reads; no printf in hot path.
+//    PWM_Bst 2048 — same as PWM_Int.
+//    PLC     4096 — UART state machine + Serial.printf every 5 s.
 // ---------------------------------------------------------------------------
-#define TASK_FLOW_STACK_WORDS          4096
-#define TASK_TEMP_STACK_WORDS          4096
+#define TASK_FLOW_STACK_WORDS          1536
+#define TASK_TEMP_STACK_WORDS          2048
 #define TASK_CURRENT_STACK_WORDS       4096
 #define TASK_SAFETY_STACK_WORDS        4096
-#define TASK_PWM_INTERNAL_STACK_WORDS  4096
-#define TASK_PWM_BOOST_STACK_WORDS     4096
+#define TASK_PWM_INTERNAL_STACK_WORDS  2048
+#define TASK_PWM_BOOST_STACK_WORDS     2048
 #define TASK_PLC_STACK_WORDS           4096
 #define TASK_PLC_TEST_STACK_WORDS      4096
 
@@ -28,10 +37,10 @@
 //  Priorities.
 //  Higher number = higher priority.
 // ---------------------------------------------------------------------------
-#define TASK_FLOW_PRIORITY             2
+#define TASK_FLOW_PRIORITY             2 //  Flow task is low priority since it's not time-sensitive and can be blocked by other tasks.
 #define TASK_TEMP_PRIORITY             2
 #define TASK_CURRENT_PRIORITY          2
-#define TASK_SAFETY_PRIORITY           4
+#define TASK_SAFETY_PRIORITY           4 // Safety task is high priority since it needs to respond quickly to fault conditions and should preempt other tasks.
 #define TASK_PWM_INTERNAL_PRIORITY     3
 #define TASK_PWM_BOOST_PRIORITY        3
 #define TASK_PLC_PRIORITY              2
@@ -55,11 +64,11 @@
 //  Sensor and control task timing.
 // ---------------------------------------------------------------------------
 #define TASK_FLOW_PERIOD_MS            1000u
-#define TASK_TEMP_PERIOD_MS            1000u
-#define TASK_CURRENT_BOOT_CAL_MS       5u
+#define TASK_TEMP_PERIOD_MS            1000u // 1000ms is a reasonable period for temperature samples since the thermal time constant of the system is on the order of minutes. Faster sampling would not provide much additional insight and would consume more CPU time and power.
+#define TASK_CURRENT_BOOT_CAL_MS       5u              //  Time to wait between samples during current sensor boot calibration.    
 #define TASK_CURRENT_SAMPLE_MS         1u
-#define TASK_CURRENT_SETTLE_MS         500u
-#define TASK_CURRENT_PERIOD_MS         TASK_CURRENT_SETTLE_MS
+#define TASK_CURRENT_SETTLE_MS         500u           //  Time to wait after current sensor boot calibration before starting regular sampling. This allows the sensor output to stabilize after the initial calibration samples are taken.
+#define TASK_CURRENT_PERIOD_MS         TASK_CURRENT_SETTLE_MS  //  TASK_CURRENT_SAMPLE_MS //  Effective period of current samples after boot calibration.
 #define TASK_SAFETY_PERIOD_MS          50u
 #define TASK_COMMAND_WATCHDOG_MS       3000u
 #define TASK_PWM_FAULT_PERIOD_MS       100u

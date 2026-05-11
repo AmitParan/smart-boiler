@@ -1,4 +1,4 @@
-#include "shared/slave_state.h"
+#include "slave_state.h"
 #include "task_config.h"
 
 #include <freertos/FreeRTOS.h>

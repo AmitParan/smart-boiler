@@ -3,19 +3,30 @@
 #include <Arduino.h>
 #include "boiler_protocol.h"
 #include "config.h"
-#include "shared/slave_state.h"
-#include "shared_data.h"   // legacy fault/status flags until PLC is refactored
+#include "state/slave_state.h"
+#include "state/shared_data.h"   // legacy fault/status flags until PLC is refactored
 #include "task_config.h"
 
 namespace {
 static constexpr float TEMP_SOFTWARE_CUTOFF_C = 80.0f;
 static constexpr float BOOST_MIN_FLOW_LPM = 1.0f;
 
+// Zero the LEDC outputs immediately, then suspend the PWM tasks so they
+// cannot re-enable the SSRs even if the fault flag is read in a race window.
 void forceOutputsOff() {
     ledcWrite(PIN_SSR_INT, 0);
     ledcWrite(PIN_SSR_EXT, 0);
     internal_ssr_on = false;
     boost_ssr_on = false;
+
+    // Suspend PWM tasks. Guards against NULL during early boot (before the
+    // handles are populated by xTaskCreatePinnedToCore in main.cpp).
+    if (g_taskPwmInternalHandle != NULL) {
+        vTaskSuspend(g_taskPwmInternalHandle);
+    }
+    if (g_taskPwmBoostHandle != NULL) {
+        vTaskSuspend(g_taskPwmBoostHandle);
+    }
 }
 
 bool commandTimedOut(const CommandSnapshot& command, TickType_t now) {
