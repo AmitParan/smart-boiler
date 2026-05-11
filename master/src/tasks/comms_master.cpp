@@ -7,7 +7,7 @@
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
-#include "tasks/TaskMasterComms.h"
+#include "TaskMasterComms.h"
 
 // ===========================================================================
 //  Master PLC communication task

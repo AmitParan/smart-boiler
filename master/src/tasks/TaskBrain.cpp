@@ -1,7 +1,7 @@
 #include "tasks/TaskBrain.h"
 
 #include <Arduino.h>
-#include "SystemManager.h"
+#include "system/SystemManager.h"
 #include "boiler_protocol.h"
 #include "shared/master_state.h"
 #include "task_config.h"

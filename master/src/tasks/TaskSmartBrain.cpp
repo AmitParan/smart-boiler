@@ -25,7 +25,7 @@
 #include "brain/event_log.h"
 #include "brain/heatup_tracker.h"
 #include "brain/brain_settings.h"
-#include "ui_manager.h"
+#include "ui/ui_manager.h"
 
 // ---------------------------------------------------------------------------
 //  Internal state

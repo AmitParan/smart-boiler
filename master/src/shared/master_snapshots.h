@@ -2,7 +2,7 @@
 #define MASTER_SNAPSHOTS_H
 
 #include <Arduino.h>
-#include "SystemManager.h"
+#include "system/SystemManager.h"
 
 // Data received from the slave by TaskMasterComms.
 struct SensorSnapshot {

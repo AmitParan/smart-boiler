@@ -7,7 +7,7 @@
 // =============================================================================
 #include "SystemManagerTest.h"
 #include "SystemManager.h"
-#include "ui_manager.h"
+#include "ui/ui_manager.h"
 #include <Arduino.h>
 
 // ===========================================================================

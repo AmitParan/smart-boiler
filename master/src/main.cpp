@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 
-#include "DataManager.h"
+#include "storage/DataManager.h"
 #include "brain/event_log.h"
 #include "brain/shower_histogram.h"
 #include "brain/heatup_tracker.h"
@@ -12,7 +12,7 @@
 #include "tasks/TaskBrain.h"
 #include "tasks/TaskMasterComms.h"
 #include "tasks/TaskSmartBrain.h"
-#include "ui_manager.h"
+#include "ui/ui_manager.h"
 
 // ===========================================================================
 //  Master task handles
