@@ -1,10 +1,10 @@
 #pragma once
 
 // =============================================================================
-// brain/brain_settings.h
+// preheat/preheat_settings.h
 // PURPOSE : Persists user-configurable "Ready By" target times (Phase 6).
 //           Two independent schedules: weekday (Mon-Fri) and weekend (Sat-Sun).
-//           When set, TaskSmartBrain uses ready_by - lead_time instead of
+//           When set, TaskPreheatScheduler uses ready_by - lead_time instead of
 //           the histogram peak to determine when to start pre-heating.
 //
 // File layout (/brain/settings.bin) — 6 bytes:
@@ -16,7 +16,7 @@
 
 #include <stdint.h>
 
-class BrainSettings {
+class PreheatSettings {
 public:
     static constexpr const char* FILE_PATH = "/brain/settings.bin";
 

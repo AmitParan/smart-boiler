@@ -15,16 +15,16 @@
 // The user can always override by pressing ON/OFF on the touchscreen.
 // =============================================================================
 
-#include "tasks/TaskSmartBrain.h"
+#include "tasks/TaskPreheatScheduler.h"
 
 #include <Arduino.h>
 #include <time.h>
 #include "task_config.h"
 #include "shared/master_state.h"
-#include "brain/shower_histogram.h"
-#include "brain/event_log.h"
-#include "brain/heatup_tracker.h"
-#include "brain/brain_settings.h"
+#include "preheat/shower_histogram.h"
+#include "preheat/event_log.h"
+#include "preheat/heatup_tracker.h"
+#include "preheat/preheat_settings.h"
 #include "ui/ui_manager.h"
 
 // ---------------------------------------------------------------------------
@@ -64,14 +64,14 @@ int16_t minutesUntil(uint16_t current, uint16_t target) {
 // ---------------------------------------------------------------------------
 //  TaskSmartBrain
 // ---------------------------------------------------------------------------
-void TaskSmartBrain(void* pvParameters) {
+void TaskPreheatScheduler(void* pvParameters) {
     (void)pvParameters;
-    Serial.println("[SMART] Task started");
+    Serial.println("[PREHEAT] Task started");
 
     TickType_t lastWakeTick = xTaskGetTickCount();
 
     for (;;) {
-        vTaskDelayUntil(&lastWakeTick, pdMS_TO_TICKS(TASK_SMART_BRAIN_PERIOD_MS));
+        vTaskDelayUntil(&lastWakeTick, pdMS_TO_TICKS(TASK_PREHEAT_SCHEDULER_PERIOD_MS));
 
         const TickType_t now = xTaskGetTickCount();
 
@@ -107,7 +107,7 @@ void TaskSmartBrain(void* pvParameters) {
         //    entirely when a fixed ready-by time is set (Phase 6).
         // -----------------------------------------------------------------
         uint16_t readyByMin = 0u;
-        const bool hasReadyBy = BrainSettings::getReadyByForToday(readyByMin);
+        const bool hasReadyBy = PreheatSettings::getReadyByForToday(readyByMin);
 
         if (!hasReadyBy && !ShowerHistogram::isReliable()) {
             uint8_t  slot  = 0u;
@@ -164,8 +164,8 @@ void TaskSmartBrain(void* pvParameters) {
         // We are inside the preheat window when:
         //   minsToStart <= 0  (start time passed) AND minsToPeak > 0 (peak not yet reached)
         // minsToStart wraps, so check: we passed startMinute but haven't passed peakMinute.
-        const bool inWindow = (minsToStart <= 0 || minsToStart >= 1440 - (int16_t)TASK_SMART_BRAIN_LEAD_MIN)
-                              && (minsToPeak > 0 && minsToPeak < (int16_t)TASK_SMART_BRAIN_LEAD_MIN + 5);
+        const bool inWindow = (minsToStart <= 0 || minsToStart >= 1440 - (int16_t)TASK_PREHEAT_DEFAULT_LEAD_MIN)
+                              && (minsToPeak > 0 && minsToPeak < (int16_t)TASK_PREHEAT_DEFAULT_LEAD_MIN + 5);
 
         char peakStr[6];
         ShowerHistogram::slotToString(peakSlot, peakStr, sizeof(peakStr));
@@ -187,7 +187,7 @@ void TaskSmartBrain(void* pvParameters) {
                 MasterState_PublishUiSnapshot(off);
 
                 s_autoActive = false;
-                Serial.printf("[SMART] Auto OFF — peak=%s on=%u min\n",
+                Serial.printf("[PREHEAT] Auto OFF — peak=%s on=%u min\n",
                               peakStr, onMinutes);
             }
             continue;
@@ -210,10 +210,10 @@ void TaskSmartBrain(void* pvParameters) {
 
             EventLog::append(BoilerEvent::AUTO_PREHEAT, (float)peakMinute);
 
-            Serial.printf("[SMART] AUTO_PREHEAT fired — peak=%s lead=%u min\n",
+            Serial.printf("[PREHEAT] AUTO_PREHEAT fired — peak=%s lead=%u min\n",
                           peakStr, (unsigned)leadMin);
         } else {
-            Serial.printf("[SMART] Standby — peak=%s in %d min\n",
+            Serial.printf("[PREHEAT] Standby — peak=%s in %d min\n",
                           peakStr, minsToPeak);
         }
     }

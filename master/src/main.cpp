@@ -2,26 +2,26 @@
 #include <WiFi.h>
 
 #include "storage/DataManager.h"
-#include "brain/event_log.h"
-#include "brain/shower_histogram.h"
-#include "brain/heatup_tracker.h"
-#include "brain/brain_settings.h"
+#include "preheat/event_log.h"
+#include "preheat/shower_histogram.h"
+#include "preheat/heatup_tracker.h"
+#include "preheat/preheat_settings.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
-#include "tasks/TaskBrain.h"
-#include "tasks/TaskMasterComms.h"
-#include "tasks/TaskSmartBrain.h"
+#include "tasks/TaskController.h"
+#include "tasks/TaskComms.h"
+#include "tasks/TaskPreheatScheduler.h"
 #include "ui/ui_manager.h"
 
 // ===========================================================================
 //  Master task handles
 // ===========================================================================
-TaskHandle_t g_taskBrainHandle = nullptr;
-TaskHandle_t g_taskMasterCommsHandle = nullptr;
-TaskHandle_t g_taskUiHandle = nullptr;
-TaskHandle_t g_taskNetworkHandle = nullptr;
-TaskHandle_t g_taskSmartBrainHandle = nullptr;
+TaskHandle_t g_taskControllerHandle       = nullptr;
+TaskHandle_t g_taskCommsHandle            = nullptr;
+TaskHandle_t g_taskUiHandle               = nullptr;
+TaskHandle_t g_taskNetworkHandle          = nullptr;
+TaskHandle_t g_taskPreheatSchedulerHandle = nullptr;
 
 namespace {
 
@@ -107,11 +107,11 @@ void setup() {
                   HeatupTracker::sessionCount(), HeatupTracker::getLeadTimeMinutes());
 
     // Brain user settings — ready-by times (Phase 6)
-    BrainSettings::init();
+    PreheatSettings::init();
     {
         uint16_t rbMin = 0u;
-        if (BrainSettings::getReadyByForToday(rbMin)) {
-            char buf[6]; BrainSettings::minuteToString(rbMin, buf, sizeof(buf));
+        if (PreheatSettings::getReadyByForToday(rbMin)) {
+            char buf[6]; PreheatSettings::minuteToString(rbMin, buf, sizeof(buf));
             Serial.printf("[BOOT] Ready-by today: %s\n", buf);
         } else {
             Serial.println("[BOOT] Ready-by: not set");
@@ -133,19 +133,19 @@ void setup() {
     // -----------------------------------------------------------------------
     //  FreeRTOS task creation
     // -----------------------------------------------------------------------
-    createTaskPinned(TaskBrain,
-                     "Brain",
-                     TASK_BRAIN_STACK_WORDS,
-                     TASK_BRAIN_PRIORITY,
-                     TASK_CORE_BRAIN,
-                     &g_taskBrainHandle);
+    createTaskPinned(TaskController,
+                     "Controller",
+                     TASK_CONTROLLER_STACK_WORDS,
+                     TASK_CONTROLLER_PRIORITY,
+                     TASK_CORE_CONTROLLER,
+                     &g_taskControllerHandle);
 
-    createTaskPinned(TaskMasterComms,
-                     "MasterComms",
-                     TASK_MASTER_COMMS_STACK_WORDS,
-                     TASK_MASTER_COMMS_PRIORITY,
-                     TASK_CORE_MASTER_COMMS,
-                     &g_taskMasterCommsHandle);
+    createTaskPinned(TaskComms,
+                     "Comms",
+                     TASK_COMMS_STACK_WORDS,
+                     TASK_COMMS_PRIORITY,
+                     TASK_CORE_COMMS,
+                     &g_taskCommsHandle);
 
     createTaskPinned(TaskUi,
                      "UI",
@@ -161,12 +161,12 @@ void setup() {
                      TASK_CORE_NETWORK,
                      &g_taskNetworkHandle);
 
-    createTaskPinned(TaskSmartBrain,
-                     "SmartBrain",
-                     TASK_SMART_BRAIN_STACK_WORDS,
-                     TASK_SMART_BRAIN_PRIORITY,
-                     TASK_CORE_SMART_BRAIN,
-                     &g_taskSmartBrainHandle);
+    createTaskPinned(TaskPreheatScheduler,
+                     "PreheatScheduler",
+                     TASK_PREHEAT_SCHEDULER_STACK_WORDS,
+                     TASK_PREHEAT_SCHEDULER_PRIORITY,
+                     TASK_CORE_PREHEAT_SCHEDULER,
+                     &g_taskPreheatSchedulerHandle);
 
     Serial.println("[BOOT] Master FreeRTOS shell ready");
 }

@@ -3,7 +3,7 @@
 // PURPOSE : Adaptive lead time — rolling average of real heat-up durations.
 // =============================================================================
 
-#include "brain/heatup_tracker.h"
+#include "preheat/heatup_tracker.h"
 #include <SPIFFS.h>
 #include <Arduino.h>
 

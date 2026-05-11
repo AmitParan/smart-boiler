@@ -3,7 +3,7 @@
 // PURPOSE : SPIFFS-backed 96-slot 24-hour shower usage histogram.
 // =============================================================================
 
-#include "brain/shower_histogram.h"
+#include "preheat/shower_histogram.h"
 #include <SPIFFS.h>
 #include <Arduino.h>
 #include <time.h>

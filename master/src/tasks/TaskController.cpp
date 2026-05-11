@@ -1,4 +1,4 @@
-#include "tasks/TaskBrain.h"
+#include "tasks/TaskController.h"
 
 #include <Arduino.h>
 #include "system/SystemManager.h"
@@ -22,10 +22,10 @@ CommandSnapshot makeFailSafeCommand(TickType_t now, bool plcConnected) {
 }
 }
 
-void TaskBrain(void* pvParameters) {
+void TaskController(void* pvParameters) {
     (void)pvParameters;
 
-    Serial.println("[BRAIN] Task started");
+    Serial.println("[CTRL] Task started");
 
     TickType_t lastWakeTick = xTaskGetTickCount();
 
@@ -72,6 +72,6 @@ void TaskBrain(void* pvParameters) {
 
         MasterState_PublishCommandSnapshot(command);
 
-        vTaskDelayUntil(&lastWakeTick, pdMS_TO_TICKS(TASK_BRAIN_PERIOD_MS));
+        vTaskDelayUntil(&lastWakeTick, pdMS_TO_TICKS(TASK_CONTROLLER_PERIOD_MS));
     }
 }

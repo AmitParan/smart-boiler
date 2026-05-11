@@ -1,13 +1,13 @@
 #include <Arduino.h>
 
 #include "boiler_protocol.h"
-#include "brain/event_log.h"
-#include "brain/shower_histogram.h"
-#include "brain/heatup_tracker.h"
+#include "preheat/event_log.h"
+#include "preheat/shower_histogram.h"
+#include "preheat/heatup_tracker.h"
 #include "config.h"
 #include "shared/master_state.h"
 #include "task_config.h"
-#include "TaskMasterComms.h"
+#include "TaskComms.h"
 
 // ===========================================================================
 //  Master PLC communication task
@@ -266,7 +266,7 @@ void transmitCommand(const CommandSnapshot& command) {
 
 } // namespace
 
-void TaskMasterComms(void* pvParameters) {
+void TaskComms(void* pvParameters) {
     (void)pvParameters;
 
     Serial1.begin(MASTER_PLC_BAUD, SERIAL_8N1, MASTER_RX_PIN, MASTER_TX_PIN);
@@ -282,11 +282,11 @@ void TaskMasterComms(void* pvParameters) {
         receivePacketsNonBlocking();
 
         const TickType_t now = xTaskGetTickCount();
-        if ((now - lastTxTick) >= pdMS_TO_TICKS(TASK_MASTER_COMMS_TX_PERIOD_MS)) {
+        if ((now - lastTxTick) >= pdMS_TO_TICKS(TASK_COMMS_TX_PERIOD_MS)) {
             lastTxTick = now;
             transmitCommand(lastCommand);
         }
 
-        vTaskDelay(pdMS_TO_TICKS(MASTER_COMMS_PERIOD_MS));
+        vTaskDelay(pdMS_TO_TICKS(TASK_COMMS_PERIOD_MS));
     }
 }

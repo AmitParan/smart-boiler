@@ -14,8 +14,8 @@
 #include "boiler_protocol.h"
 #include "shared/master_state.h"
 #include "task_config.h"
-#include "brain/brain_settings.h"
-#include "brain/event_log.h"
+#include "preheat/preheat_settings.h"
+#include "preheat/event_log.h"
 
 #define WEATHER_API_KEY      "7a1028898a2cdcc08a58a8109fb061e4"  // local only - do not commit
 #define WEATHER_CITY         "Tel Aviv"
@@ -841,8 +841,8 @@ void UI_Init() {
     lv_obj_set_style_bg_color(btn_rb_save, CLR_ON, 0);
     lv_obj_add_event_cb(btn_rb_save, [](lv_event_t*) {
         const uint16_t totalMin = (uint16_t)(rb_hour * 60 + rb_minute);
-        BrainSettings::setWeekdayReadyBy(totalMin);
-        BrainSettings::setWeekendReadyBy(totalMin);
+        PreheatSettings::setWeekdayReadyBy(totalMin);
+        PreheatSettings::setWeekendReadyBy(totalMin);
         EventLog::append(BoilerEvent::TARGET_TIME_SET, (float)totalMin);
         lv_obj_add_flag(ready_by_modal, LV_OBJ_FLAG_HIDDEN);
         Serial.printf("[UI] Ready-by saved: %02d:%02d\n", rb_hour, rb_minute);

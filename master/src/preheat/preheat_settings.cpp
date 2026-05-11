@@ -3,7 +3,7 @@
 // PURPOSE : Persist and retrieve "Ready By" target times.
 // =============================================================================
 
-#include "brain/brain_settings.h"
+#include "preheat/preheat_settings.h"
 #include <SPIFFS.h>
 #include <Arduino.h>
 #include <time.h>
@@ -11,17 +11,17 @@
 // ---------------------------------------------------------------------------
 //  Static member definitions
 // ---------------------------------------------------------------------------
-bool     BrainSettings::s_weekdayEnabled = false;
-uint16_t BrainSettings::s_weekdayMin     = 0u;
-bool     BrainSettings::s_weekendEnabled = false;
-uint16_t BrainSettings::s_weekendMin     = 0u;
+bool     PreheatSettings::s_weekdayEnabled = false;
+uint16_t PreheatSettings::s_weekdayMin     = 0u;
+bool     PreheatSettings::s_weekendEnabled = false;
+uint16_t PreheatSettings::s_weekendMin     = 0u;
 
 static constexpr uint32_t FILE_BYTES = 6u;
 
 // ---------------------------------------------------------------------------
 //  init
 // ---------------------------------------------------------------------------
-bool BrainSettings::init() {
+bool PreheatSettings::init() {
     s_weekdayEnabled = false;
     s_weekdayMin     = 0u;
     s_weekendEnabled = false;
@@ -72,7 +72,7 @@ bool BrainSettings::init() {
 // ---------------------------------------------------------------------------
 //  Setters
 // ---------------------------------------------------------------------------
-void BrainSettings::setWeekdayReadyBy(uint16_t minuteOfDay) {
+void PreheatSettings::setWeekdayReadyBy(uint16_t minuteOfDay) {
     s_weekdayEnabled = true;
     s_weekdayMin     = (minuteOfDay < 1440u) ? minuteOfDay : 0u;
     persistToDisk();
@@ -81,13 +81,13 @@ void BrainSettings::setWeekdayReadyBy(uint16_t minuteOfDay) {
     Serial.printf("[SETTINGS] Weekday ready-by set: %s\n", buf);
 }
 
-void BrainSettings::clearWeekdayReadyBy() {
+void PreheatSettings::clearWeekdayReadyBy() {
     s_weekdayEnabled = false;
     persistToDisk();
     Serial.println("[SETTINGS] Weekday ready-by cleared");
 }
 
-void BrainSettings::setWeekendReadyBy(uint16_t minuteOfDay) {
+void PreheatSettings::setWeekendReadyBy(uint16_t minuteOfDay) {
     s_weekendEnabled = true;
     s_weekendMin     = (minuteOfDay < 1440u) ? minuteOfDay : 0u;
     persistToDisk();
@@ -96,7 +96,7 @@ void BrainSettings::setWeekendReadyBy(uint16_t minuteOfDay) {
     Serial.printf("[SETTINGS] Weekend ready-by set: %s\n", buf);
 }
 
-void BrainSettings::clearWeekendReadyBy() {
+void PreheatSettings::clearWeekendReadyBy() {
     s_weekendEnabled = false;
     persistToDisk();
     Serial.println("[SETTINGS] Weekend ready-by cleared");
@@ -105,7 +105,7 @@ void BrainSettings::clearWeekendReadyBy() {
 // ---------------------------------------------------------------------------
 //  getReadyByForToday
 // ---------------------------------------------------------------------------
-bool BrainSettings::getReadyByForToday(uint16_t& out_min) {
+bool PreheatSettings::getReadyByForToday(uint16_t& out_min) {
     time_t now = time(nullptr);
     if (now < 100000L) return false;  // NTP not synced
 
@@ -127,11 +127,11 @@ bool BrainSettings::getReadyByForToday(uint16_t& out_min) {
 // ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------
-void BrainSettings::minuteToString(uint16_t min, char* buf, uint8_t bufLen) {
+void PreheatSettings::minuteToString(uint16_t min, char* buf, uint8_t bufLen) {
     snprintf(buf, bufLen, "%02u:%02u", min / 60u, min % 60u);
 }
 
-bool BrainSettings::persistToDisk() {
+bool PreheatSettings::persistToDisk() {
     File f = SPIFFS.open(FILE_PATH, "r+");
     if (!f) return false;
 
