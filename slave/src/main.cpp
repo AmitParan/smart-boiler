@@ -69,9 +69,13 @@ void setup() {
     xTaskCreatePinnedToCore(TaskCurrent, "Current", TASK_CURRENT_STACK_WORDS, NULL, TASK_CURRENT_PRIORITY, &g_taskCurrentHandle, TASK_CORE_CURRENT);
 
     // Control tasks (higher priority than sensors)
-    xTaskCreatePinnedToCore(TaskSafety,       "Safety",  TASK_SAFETY_STACK_WORDS,       NULL, TASK_SAFETY_PRIORITY,       &g_taskSafetyHandle,      TASK_CORE_SAFETY);
+    // In HW_TEST_MODE the validator owns LEDC directly — skip PWM tasks to
+    // avoid ledcAttach conflicts on the same channels.
+    xTaskCreatePinnedToCore(TaskSafety, "Safety", TASK_SAFETY_STACK_WORDS, NULL, TASK_SAFETY_PRIORITY, &g_taskSafetyHandle, TASK_CORE_SAFETY);
+#if !HW_TEST_MODE
     xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int", TASK_PWM_INTERNAL_STACK_WORDS, NULL, TASK_PWM_INTERNAL_PRIORITY, &g_taskPwmInternalHandle, TASK_CORE_PWM_INTERNAL);
     xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst", TASK_PWM_BOOST_STACK_WORDS,    NULL, TASK_PWM_BOOST_PRIORITY,    &g_taskPwmBoostHandle,    TASK_CORE_PWM_BOOST);
+#endif
 
     // PLC communication — or scripted test sender — or hardware validator
 #if HW_TEST_MODE
