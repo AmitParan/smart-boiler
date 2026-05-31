@@ -9,6 +9,7 @@
 #include "tasks/pwm_task_boost.h"
 #include "tasks/plc_task.h"
 #include "tasks/plc_test_sender.h"
+#include "tasks/TaskHardwareValidator.h"
 #include "state/slave_state.h"
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
@@ -26,13 +27,13 @@ TaskHandle_t g_taskPlcHandle         = NULL;
 TaskHandle_t g_taskPlcTestHandle     = NULL;
 
 // ---------------------------------------------------------------------------
-//  SLAVE TEST MODE
-//  Set to 1 to replace real sensor data with scripted scenarios.
-//  The slave will cycle through all SystemManager states and send fake STATUS
-//  packets so the master test bench (TEST_MODE 1) can verify its logic.
-//  Set to 0 for normal operation with real sensors.
+//  SLAVE TEST MODES
+//  SLAVE_TEST_MODE 0 = production (real sensors, real PLC)
+//  SLAVE_TEST_MODE 1 = PLC test sender (scripted STATUS packets to master)
+//  HW_TEST_MODE    1 = hardware LED validator (Part 2 bench test)
 // ---------------------------------------------------------------------------
 #define SLAVE_TEST_MODE 0
+#define HW_TEST_MODE    0
 
 void setup() {
     Serial.begin(115200);
@@ -72,8 +73,11 @@ void setup() {
     xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int", TASK_PWM_INTERNAL_STACK_WORDS, NULL, TASK_PWM_INTERNAL_PRIORITY, &g_taskPwmInternalHandle, TASK_CORE_PWM_INTERNAL);
     xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst", TASK_PWM_BOOST_STACK_WORDS,    NULL, TASK_PWM_BOOST_PRIORITY,    &g_taskPwmBoostHandle,    TASK_CORE_PWM_BOOST);
 
-    // PLC communication — or scripted test sender
-#if SLAVE_TEST_MODE
+    // PLC communication — or scripted test sender — or hardware validator
+#if HW_TEST_MODE
+    xTaskCreatePinnedToCore(TaskHardwareValidator, "HWValid", 4096, NULL, 2, NULL, TASK_CORE_SLAVE);
+    Serial.println("[BOOT] HW_TEST_MODE 1 — hardware LED validator running");
+#elif SLAVE_TEST_MODE
     Serial.println("[SLAVE TEST MODE] Starting PLC test sender");
     xTaskCreatePinnedToCore(TaskPLCTestSender, "PLCTest", TASK_PLC_TEST_STACK_WORDS, NULL, TASK_PLC_TEST_PRIORITY, &g_taskPlcTestHandle, TASK_CORE_PLC_TEST);
 #else

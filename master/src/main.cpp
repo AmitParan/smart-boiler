@@ -13,6 +13,16 @@
 #include "tasks/TaskComms.h"
 #include "tasks/TaskPreheatScheduler.h"
 #include "ui/ui_manager.h"
+#include "system/SystemManagerTest.h"
+#include "system/InteractiveTestBench.h"
+
+// ===========================================================================
+//  TEST MODE
+//  0 = production (default)
+//  1 = automated SystemManager scenario runner  (SystemManagerTest)
+//  2 = interactive serial control panel         (InteractiveTestBench)
+// ===========================================================================
+#define TEST_MODE 0
 
 // ===========================================================================
 //  Master task handles
@@ -167,6 +177,24 @@ void setup() {
                      TASK_PREHEAT_SCHEDULER_PRIORITY,
                      TASK_CORE_PREHEAT_SCHEDULER,
                      &g_taskPreheatSchedulerHandle);
+
+#if TEST_MODE == 1
+    createTaskPinned(TaskSystemManagerTest,
+                     "SysMgrTest",
+                     4096,
+                     1,
+                     1,
+                     nullptr);
+    Serial.println("[BOOT] TEST_MODE 1 — automated SystemManager test running");
+#elif TEST_MODE == 2
+    createTaskPinned(TaskInteractiveTestBench,
+                     "InteractiveTB",
+                     4096,
+                     1,
+                     1,
+                     nullptr);
+    Serial.println("[BOOT] TEST_MODE 2 — interactive serial test bench running");
+#endif
 
     Serial.println("[BOOT] Master FreeRTOS shell ready");
 }
