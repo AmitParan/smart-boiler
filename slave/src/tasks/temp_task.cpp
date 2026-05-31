@@ -31,12 +31,23 @@ void TaskTemp(void* pvParameters) {
         SlaveState_ReadSensors(snapshot);
 
         for (int i = 0; i < 3; ++i) {
-            snapshot.tempsC[i] = sensors.getTempCByIndex(i);
+            const float t = sensors.getTempCByIndex(i);
+            // DS18B20 returns 85.0 on power-on reset and -127.0 when
+            // disconnected. Keep the previous value so stale-but-valid
+            // data is better than a false spike triggering safety cutoff.
+            if (t != DEVICE_DISCONNECTED_C && t != 85.0f) {
+                snapshot.tempsC[i] = t;
+            }
         }
 
         snapshot.updatedAtTick = xTaskGetTickCount();
         snapshot.valid = true;
         SlaveState_UpdateSensors(snapshot);
+
+        Serial.printf("[TEMP] t0=%.1f t1=%.1f t2=%.1f\n",
+                      snapshot.tempsC[0],
+                      snapshot.tempsC[1],
+                      snapshot.tempsC[2]);
 
         vTaskDelay(pdMS_TO_TICKS(TASK_TEMP_PERIOD_MS));
     }

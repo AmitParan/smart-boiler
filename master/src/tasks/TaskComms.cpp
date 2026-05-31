@@ -275,13 +275,33 @@ void TaskComms(void* pvParameters) {
                   MASTER_RX_PIN,
                   MASTER_TX_PIN);
 
-    TickType_t lastTxTick = xTaskGetTickCount();
+    TickType_t lastTxTick    = xTaskGetTickCount();
+    TickType_t lastReportTick = xTaskGetTickCount();
+    uint32_t   rawBytesIn     = 0u;
 
     for (;;) {
         refreshLatestCommand();
+
+        // Count raw bytes before the parser consumes them — communication check.
+        while (Serial1.available()) {
+            Serial1.peek();
+            rawBytesIn++;
+            break;
+        }
+
         receivePacketsNonBlocking();
 
         const TickType_t now = xTaskGetTickCount();
+
+        // Report raw byte count every 5 s so you can see if slave bytes arrive.
+        if ((now - lastReportTick) >= pdMS_TO_TICKS(5000u)) {
+            Serial.printf("[COMMS] Raw bytes from slave in last 5s: %u (%s)\n",
+                          rawBytesIn,
+                          rawBytesIn > 0 ? "link alive" : "NO DATA — check PLC wiring");
+            rawBytesIn     = 0u;
+            lastReportTick = now;
+        }
+
         if ((now - lastTxTick) >= pdMS_TO_TICKS(TASK_COMMS_TX_PERIOD_MS)) {
             lastTxTick = now;
             transmitCommand(lastCommand);
