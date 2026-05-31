@@ -70,7 +70,7 @@
 #define TASK_CURRENT_SETTLE_MS         500u           //  Time to wait after current sensor boot calibration before starting regular sampling. This allows the sensor output to stabilize after the initial calibration samples are taken.
 #define TASK_CURRENT_PERIOD_MS         TASK_CURRENT_SETTLE_MS  //  TASK_CURRENT_SAMPLE_MS //  Effective period of current samples after boot calibration.
 #define TASK_SAFETY_PERIOD_MS          50u
-#define TASK_COMMAND_WATCHDOG_MS       3000u
+#define TASK_COMMAND_WATCHDOG_MS       6000u   // slave gets ~1 of 3 CMDs (half-duplex), so ~3s between CMDs
 #define TASK_PWM_FAULT_PERIOD_MS       100u
 #define TASK_PWM_WINDOW_MS             2000u
 #define TASK_PWM_SLICE_MS              50u
