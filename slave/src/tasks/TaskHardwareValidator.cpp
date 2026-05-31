@@ -113,7 +113,7 @@ void publishCmd(uint8_t pwmInt, uint8_t pwmBst, uint8_t flags) {
     cmd.flags          = flags;
     cmd.receivedAtTick = xTaskGetTickCount();
     cmd.valid          = true;
-    SlaveState_PublishCommand(cmd);
+    SlaveState_UpdateCommand(cmd);
 }
 
 } // namespace
