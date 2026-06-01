@@ -31,9 +31,9 @@ void TaskPWM_Boost(void* pvParameters) {
         int on_ms = (2000 * (int)pwm_val) / 100;
         int off_ms = 2000 - on_ms;
 
-        // Activate heater by sending a 1000Hz pulse (Duty Cycle of 127 out of 255)
+        // Drive SSR control HIGH (full DC during ON window — 1kHz carrier at 50% was causing partial conduction)
         if (on_ms > 0) {
-            ledcWrite(PIN_SSR_EXT, 127);
+            ledcWrite(PIN_SSR_EXT, 255);
             boost_ssr_on = true;
             vTaskDelay(pdMS_TO_TICKS(on_ms));
         }
