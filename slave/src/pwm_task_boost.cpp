@@ -4,17 +4,16 @@
 #include "boiler_protocol.h"
 
 void TaskPWM_Boost(void* pvParameters) {
-    // Plain GPIO — time-proportional burst control is done at task level;
-    // no hardware PWM carrier is needed or desired for SSR control.
-    pinMode(PIN_SSR_EXT, OUTPUT);
-    digitalWrite(PIN_SSR_EXT, LOW); // Start in OFF state
+    // Initialize PWM on the SSR pin at 1000Hz (8-bit resolution) for the hardware watchdog
+    ledcAttach(PIN_SSR_EXT, 1000, 8);
+    ledcWrite(PIN_SSR_EXT, 0); // Start in OFF state
 
     Serial.println("[PWM_BST] Task started");
 
     for (;;) {
         // Hardware protection: immediate cutoff in case of system fault
         if (system_fault) {
-            digitalWrite(PIN_SSR_EXT, LOW);
+            ledcWrite(PIN_SSR_EXT, 0);
             boost_ssr_on = false;
             vTaskDelay(pdMS_TO_TICKS(100));
             continue;
@@ -32,14 +31,16 @@ void TaskPWM_Boost(void* pvParameters) {
         int on_ms = (2000 * (int)pwm_val) / 100;
         int off_ms = 2000 - on_ms;
 
+        // Activate heater by sending a 1000Hz pulse (Duty Cycle of 127 out of 255)
         if (on_ms > 0) {
-            digitalWrite(PIN_SSR_EXT, HIGH);
+            ledcWrite(PIN_SSR_EXT, 127);
             boost_ssr_on = true;
             vTaskDelay(pdMS_TO_TICKS(on_ms));
         }
-
+        
+        // Stop the pulse to turn off the heater
         if (off_ms > 0) {
-            digitalWrite(PIN_SSR_EXT, LOW);
+            ledcWrite(PIN_SSR_EXT, 0);
             boost_ssr_on = false;
             vTaskDelay(pdMS_TO_TICKS(off_ms));
         }

@@ -25,16 +25,6 @@ void TaskCurrent(void * pvParameters) {
     }
     float vref_actual = vref_sum / 200.0f;
 
-    // Sanity-check: if vref deviates >10% from nominal (2.5V), current was
-    // likely flowing during boot calibration (SSR stuck or leakage).
-    // Fall back to nominal to avoid a permanently poisoned zero reference.
-    if (fabsf(vref_actual - ACS758_VREF) > 0.25f) {
-        Serial.printf("[CURRENT] WARNING: VREF %.3fV far from nominal %.3fV"
-                      " — current at boot? Using nominal.\n",
-                      vref_actual, ACS758_VREF);
-        vref_actual = ACS758_VREF;
-    }
-
     // Derive actual VCC from measured VREF (ACS758: VREF = VCC/2)
     float vcc_actual = vref_actual * 2.0f;
     // Sensitivity scales linearly with VCC (spec is 40mV/A at 5V)
