@@ -50,8 +50,8 @@ void TaskSafety(void* pvParameters) {
 
         if (fault) {
             // Hard-cut both SSRs by stopping the 1kHz hardware watchdog carrier
-            ledcWrite(0, 0); // Stops PWM_CH_INT
-            ledcWrite(1, 0); // Stops PWM_CH_EXT
+            ledcWrite(PIN_SSR_INT, 0); // Stops PWM on internal heater SSR
+            ledcWrite(PIN_SSR_EXT, 0); // Stops PWM on boost heater SSR
             system_fault = true;
             // Note: system_fault is only cleared by a hardware reboot
         }
