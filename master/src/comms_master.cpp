@@ -46,7 +46,7 @@ static void processStatusPacket(const uint8_t* raw) {
     if (last_rx_seq != 0xFFu) {
         uint8_t expected = (uint8_t)(last_rx_seq + 1u);
         if (pkt->sequence != expected) {
-            Serial.printf("[COMMS RX] Packet loss: expected seq %u got %u\n",
+            Serial.printf("[M<-S] DROP: expected seq=%u got seq=%u\n",
                           expected, pkt->sequence);
         }
     }
@@ -59,10 +59,14 @@ static void processStatusPacket(const uint8_t* raw) {
     float flow        = pkt->flowRate      / 10.0f;
     float power_w     = (float)pkt->powerWatts;
 
-    // Cache for the combined log line in sendCommand()
+    // Cache for SystemInputs in sendCommand()
     last_t_internal = t_internal;
     last_flow       = flow;
     last_power_w    = power_w;
+
+    Serial.printf("[M<-S] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
+                  pkt->sequence, t_internal, t_boiler, t_boost,
+                  flow, power_w, pkt->statusByte);
 
     // Update the LVGL UI (function is LVGL-lock safe)
     UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
@@ -108,13 +112,8 @@ static void sendCommand() {
         delay(2);
     }
 
-    // One combined line per cycle — same field order as slave [TEST TX], then master decision
-    if (last_rx_seq != 0xFFu) {
-        Serial.printf("[MASTER] seq=%u  tInt=%.1f flow=%.1f pwr=%.0fW  ->  pwmInt=%u%% pwmBst=%u%% [%s]\n",
-                      pkt.sequence,
-                      last_t_internal, last_flow, last_power_w,
-                      pkt.pwmInternal, pkt.pwmBoost, cmd.stateLabel);
-    }
+    Serial.printf("[M->S] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X | [%s]\n",
+                  pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, pkt.cmdFlags, cmd.stateLabel);
 }
 
 // ---------------------------------------------------------------------------
@@ -183,20 +182,20 @@ static bool receivePacket() {
                             rx_state = RX_WAIT_START; rx_buf_idx = 0u;
                             return true;
                         } else {
-                            Serial.printf("[COMMS RX] CRC error "
+                            Serial.printf("[M<-S] CRC error "
                                           "(calc 0x%02X recv 0x%02X)\n",
                                           calc_crc, recv_crc);
                         }
 
                     } else if (pkt_type == PROTO_TYPE_CMD) {
                         // Echo of our own CMD transmission — ignore
-                        Serial.println("[COMMS RX] Own CMD echo ignored");
+                        Serial.println("[M<-S] own CMD echo ignored");
                     } else {
-                        Serial.printf("[COMMS RX] Unknown type 0x%02X\n",
+                        Serial.printf("[M<-S] unknown type 0x%02X\n",
                                       pkt_type);
                     }
                 } else {
-                    Serial.printf("[COMMS RX] Bad end byte 0x%02X\n", b);
+                    Serial.printf("[M<-S] bad end byte 0x%02X\n", b);
                 }
                 rx_state = RX_WAIT_START; rx_buf_idx = 0u;
                 break;

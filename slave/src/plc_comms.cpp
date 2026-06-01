@@ -81,11 +81,10 @@ void PLC_SendStatus() {
         delay(2);
     }
 
-    Serial.printf("[PLC TX] STATUS seq=%u t1=%.1f t2=%.1f t3=%.1f "
-                  "flow=%.1f pwr=%uW status=0x%02X\n",
+    Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
                   pkt.sequence,
                   temps[0], temps[1], temps[2],
-                  current_flow, (unsigned)pkt.powerWatts, pkt.statusByte);
+                  current_flow, (float)pkt.powerWatts, pkt.statusByte);
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +105,7 @@ bool PLC_ReceivePacket() {
     if (rx_state != RX_WAIT_START &&
         (millis() - rx_last_byte_ms) > RX_TIMEOUT_MS) {
         // Dump whatever arrived so we can diagnose the link
-        Serial.printf("[PLC RX] Timeout — got %u byte(s): ", rx_buf_idx);
+        Serial.printf("[S<-M] timeout — got %u byte(s): ", rx_buf_idx);
         for (uint8_t i = 0; i < rx_buf_idx; i++) {
             Serial.printf("0x%02X ", rx_buf[i]);
         }
@@ -180,8 +179,7 @@ bool PLC_ReceivePacket() {
                             if (last_rx_seq != 0xFFu) {
                                 uint8_t expected_seq = (uint8_t)(last_rx_seq + 1u);
                                 if (cmd->sequence != expected_seq) {
-                                    Serial.printf("[PLC RX] Packet loss: "
-                                                  "expected seq %u got %u\n",
+                                    Serial.printf("[S<-M] DROP: expected seq=%u got seq=%u\n",
                                                   expected_seq, cmd->sequence);
                                 }
                             }
@@ -200,8 +198,7 @@ bool PLC_ReceivePacket() {
                                 cmd_flags        = cmd->cmdFlags;
                             }
 
-                            Serial.printf("[PLC RX] CMD seq=%u "
-                                          "pwmInt=%u pwmBst=%u flags=0x%02X\n",
+                            Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",
                                           cmd->sequence,
                                           cmd->pwmInternal,
                                           cmd->pwmBoost,
@@ -213,20 +210,20 @@ bool PLC_ReceivePacket() {
                             return true;
 
                         } else {
-                            Serial.printf("[PLC RX] CRC error "
-                                          "(calc 0x%02X recv 0x%02X) — discarded\n",
+                            Serial.printf("[S<-M] CRC error "
+                                          "(calc 0x%02X recv 0x%02X)\n",
                                           calc_crc, recv_crc);
                         }
 
                     } else if (pkt_type == PROTO_TYPE_STATUS) {
                         // Echo of our own STATUS transmission — ignore
-                        Serial.println("[PLC RX] Own STATUS echo ignored");
+                        Serial.println("[S<-M] own STATUS echo ignored");
                     } else {
-                        Serial.printf("[PLC RX] Unknown type 0x%02X len=%u\n",
+                        Serial.printf("[S<-M] unknown type 0x%02X len=%u\n",
                                       pkt_type, pkt_len);
                     }
                 } else {
-                    Serial.printf("[PLC RX] Bad end byte 0x%02X\n", b);
+                    Serial.printf("[S<-M] bad end byte 0x%02X\n", b);
                 }
 
                 rx_state   = RX_WAIT_START;
