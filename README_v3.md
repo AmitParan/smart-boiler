@@ -2,7 +2,7 @@
 
 Last updated: June 2026  
 Git branch: `v3`  
-Last commit: `a7a9f6d` — revert(slave): restore PWM/safety/current tasks to last working state
+Last commit: `69fbf22` — chore(slave): remove leftover SLAVE_TEST_MODE comment from main.cpp
 
 ---
 
@@ -79,15 +79,22 @@ main.cpp
 ```
 
 **SystemManager state machine** (`SystemManager.cpp`):
-| Priority | State               | Condition                           | Output              |
-|----------|---------------------|-------------------------------------|---------------------|
-| 1 (high) | SAFETY_OVERRIDE     | plcConnected = false                | pwmInt=0, flags=0   |
-| 2        | STATE_OFF           | uiStateOn = false                   | pwmInt=0, flags=0   |
-| 3        | STATE_SHOWER_BOOST  | flow > 0.5 L/min                    | pwmInt=100, boost=100 |
-| 4        | STATE_HEATING_TANK  | currentTemp < targetTemp (40°C)     | pwmInt=100, flags=enable |
-| 5 (low)  | STATE_STANDBY       | temp OK, no flow                    | pwmInt=0, flags=0   |
+| Priority | State               | Condition                                         | Output                    |
+|----------|---------------------|---------------------------------------------------|---------------------------|
+| 1 (high) | SAFETY_OVERRIDE     | plcConnected = false OR temp ≥ 85°C               | pwmInt=0, boost=0         |
+| 2        | STATE_OFF           | uiStateOn = false                                 | pwmInt=0, boost=0         |
+| 3        | STATE_SHOWER_BOOST  | flow > 0.5 L/min AND currentTemp < 45°C           | pwmInt=0, boost=100       |
+| 3        | STATE_SHOWER_BOOST  | flow > 0.5 L/min AND currentTemp ≥ 45°C           | pwmInt=0, boost=0 (warm enough) |
+| 4        | STATE_HEATING_TANK  | no flow AND currentTemp < 40°C                    | pwmInt=100, boost=0       |
+| 5 (low)  | STATE_STANDBY       | no flow AND currentTemp ≥ 40°C                    | pwmInt=0, boost=0         |
 
-> Note: `plcConnected` is hardcoded to `true` in `sendCommand()`. SAFETY_OVERRIDE never fires. This needs fixing in a future version.
+**Key constants** (`SystemManager.h`):
+- `TARGET_TANK_TEMP = 40°C` — internal heater target
+- `BOOST_CUTOFF_C = 45°C` — boost heater disables above this tank temp
+- `TEMP_CUTOFF_C = 85°C` — hard safety cutoff
+- `FLOW_THRESHOLD_LPM = 0.5 L/min` — minimum flow to trigger boost
+
+> Note: `plcConnected` is hardcoded to `true` in `sendCommand()`. SAFETY_OVERRIDE never fires. This needs fixing in a future version (BUG-2).
 
 ### 3.2 Slave Tasks (ESP32-C6, FreeRTOS, all pinned to Core 0)
 
@@ -196,7 +203,50 @@ monitor_speed = 115200
 
 ---
 
-## 6. Current Verified Status (as of branch v3)
+## 6. Test Mode Reference
+
+### 6.1 Master — 4-Variable Test Harness (`comms_master.cpp`)
+
+Edit these 4 constants, save, and re-upload to exercise the SystemManager without real sensors:
+
+```cpp
+static const float TEST_TEMP  = 25.0f;   // tank temperature [°C]
+static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
+static const bool  TEST_UI_ON = true;    // boiler ON/OFF button
+static const bool  TEST_PLC   = true;    // false = simulate PLC lost
+```
+
+| TEST_UI_ON | TEST_PLC | TEST_TEMP | TEST_FLOW | Expected State       | SSR Int | SSR Boost |
+|:---:|:---:|:---:|:---:|---|:---:|:---:|
+| any | **false** | any | any | `SAFETY_OVERRIDE` | OFF | OFF |
+| **false** | true | any | any | `STATE_OFF` | OFF | OFF |
+| true | true | any | **> 0.5** + temp < 45 | `STATE_SHOWER_BOOST` | OFF | **ON** |
+| true | true | any | **> 0.5** + temp ≥ 45 | `STATE_SHOWER_BOOST` | OFF | OFF |
+| true | true | **< 40** | 0 | `STATE_HEATING_TANK` | **ON** | OFF |
+| true | true | **≥ 40** | 0 | `STATE_STANDBY` | OFF | OFF |
+
+Serial log format:
+```
+[TEST] t=25.0  flow=4.0  ui=ON  plc=OK
+[M->S] seq= 1 | pwmInt=  0%  pwmBst=100% | flags=0x02 | [STATE_SHOWER_BOOST]
+```
+
+### 6.2 Slave — SLAVE_TEST_MODE (`slave/src/config.h`)
+
+```cpp
+#define SLAVE_TEST_MODE  1   // 0 = production, 1 = bench testing (no sensors)
+```
+
+| Mode | Effect |
+|------|--------|
+| `1` (bench) | Bypasses flow interlock in `safety_task.cpp` and `pwm_task_boost.cpp`. Boost SSR fires even with no flow sensor connected. Uncommanded-current detection also disabled. |
+| `0` (production) | All safety interlocks active. Boost SSR requires flow ≥ 1.0 L/min. |
+
+> ⚠️ **Remember to set `SLAVE_TEST_MODE 0` before installing in the boiler.**
+
+---
+
+## 7. Current Verified Status (as of branch v3)
 
 | Item                               | Status  | Notes                                      |
 |------------------------------------|---------|---------------------------------------------|
@@ -205,18 +255,21 @@ monitor_speed = 115200
 | SystemManager state machine        | ✅ WORKS | Correctly enters STATE_HEATING_TANK         |
 | Slave receives CMD, sends STATUS   | ✅ WORKS | `[S<-M]` and `[S->M]` log lines confirmed  |
 | SSR Internal indicator LED         | ✅ WORKS | Red LED on SSR lights when commanded ON    |
+| SSR Boost indicator LED            | ✅ WORKS | Confirmed working in SLAVE_TEST_MODE       |
 | DS18B20 temperature (3 sensors)    | ✅ WORKS | t1/t2/t3 reporting correctly               |
 | Flow sensor (YF-B6)                | ✅ WORKS | Reports 0.0 L/min at rest                  |
 | Current sensor (ACS758)            | ⚠️ PARTIAL | Reads 0W for 9W LED (expected — see §4); real boiler load untested |
 | Safety: overheat protection        | ✅ CODE OK | Not hardware-tested at high temp yet       |
-| Safety: flow interlock             | ✅ CODE OK | Not hardware-tested with boost SSR yet     |
+| Safety: flow interlock             | ✅ CODE OK | Bypassed in SLAVE_TEST_MODE; not yet tested with real flow |
 | Safety: uncommanded current        | ⚠️ KNOWN BUG | Can false-trigger if SSR is ON at boot calibration — see §7 |
+| Boost cutoff at 45°C               | ✅ CODE OK | Boost disabled when tank temp ≥ 45°C       |
+| SLAVE_TEST_MODE                    | ✅ WORKS | Bypasses flow interlock + uncommanded-current checks for bench testing |
+| Master 4-variable test harness     | ✅ WORKS | Edit TEST_TEMP/TEST_FLOW/TEST_UI_ON/TEST_PLC in comms_master.cpp |
 | 220V load actually powered         | ❌ UNTESTED | 9W LED incompatible (too low current for SSR triac). Use resistive load. |
-| Boost SSR                          | ❌ UNTESTED | No test with flow active                   |
 
 ---
 
-## 7. Known Bugs and Limitations
+## 8. Known Bugs and Limitations
 
 ### BUG-1: Current sensor false fault on boot (safety_task.cpp)
 **Symptom:** `[SAFETY] FAULT: Current detected without command` fires continuously, `sts=0x08`, SSR never turns on.  
@@ -239,14 +292,14 @@ Zero-crossing SSRs require a minimum holding current (typically 50–200mA). A 9
 
 ---
 
-## 8. TODO — Next Development Steps (Priority Order)
+## 9. TODO — Next Development Steps (Priority Order)
 
 ### Phase 1: Hardware Validation Checklist
 Before writing more code, confirm these hardware items work:
 
 - [ ] **HW-1** Flash both devices on v3, confirm `[S<-M]` and `[S->M]` appear in both monitors with no `DROP` lines
 - [ ] **HW-2** Connect a resistive test load (≥40W incandescent bulb) to SSR_INT output. Command boiler ON. Confirm load powers on.
-- [ ] **HW-3** Measure current with a clamp meter when load is ON. Confirm `pwr` reading in slave monitor is reasonable (≥40W / 220V = ≥0.18A — may still be below noise floor; that's OK for now)
+- [ ] **HW-3** Measure current with a clamp meter when load is ON. Confirm `pwr` reading in slave monitor is reasonable (use ≥40W resistive load; 9W LED is too low for SSR triac holding current)
 - [ ] **HW-4** Test temperature reading by warming a sensor. Confirm `t1` rises in monitor.
 - [ ] **HW-5** Test flow sensor by running water. Confirm `flow > 0` appears.
 - [ ] **HW-6** Test overtemp safety: heat a sensor to >80°C. Confirm `[SAFETY] FAULT: Overheat` fires and SSR turns off.
@@ -312,7 +365,7 @@ T8  SSR short simulation (SW-2 fix required): force current with SSR OFF
 
 ---
 
-## 9. Flash Instructions
+## 10. Flash Instructions
 
 ### Master (this PC, COM7)
 ```bash
@@ -332,7 +385,7 @@ pio device monitor --baud 115200
 
 ---
 
-## 10. Git Branch Notes
+## 11. Git Branch Notes
 
 | Branch                    | Status   | Description                                  |
 |---------------------------|----------|----------------------------------------------|

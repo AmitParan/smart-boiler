@@ -82,12 +82,13 @@ static void processStatusPacket(const uint8_t* raw) {
 //   STATE_OFF           →  TEST_UI_ON = false
 //   STATE_HEATING_TANK  →  TEST_UI_ON = true,  TEST_TEMP < 40,  TEST_FLOW = 0
 //   STATE_STANDBY       →  TEST_UI_ON = true,  TEST_TEMP > 40,  TEST_FLOW = 0
-//   STATE_SHOWER_BOOST  →  TEST_UI_ON = true,  TEST_FLOW > 0.5
+//   STATE_SHOWER_BOOST  →  TEST_UI_ON = true,  TEST_FLOW > 0.5,  TEST_TEMP < 45 (boost ON)
+//                          TEST_UI_ON = true,  TEST_FLOW > 0.5,  TEST_TEMP >= 45 (boost OFF — already warm)
 //   SAFETY_OVERRIDE     →  TEST_PLC = false
 // ===========================================================================
-static const float TEST_TEMP  = 25.0f;   // tank temperature [°C]
-static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
-static const bool  TEST_UI_ON = false;   // boiler ON/OFF button
+static const float TEST_TEMP  = 45.0f;   // tank temperature [°C]
+static const float TEST_FLOW  = 4.0f;    // flow rate [L/min]
+static const bool  TEST_UI_ON = true;   // boiler ON/OFF button
 static const bool  TEST_PLC   = true;    // false = simulate PLC lost
 
 // ---------------------------------------------------------------------------

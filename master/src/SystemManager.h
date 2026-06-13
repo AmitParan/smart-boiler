@@ -38,6 +38,7 @@
 static constexpr float   TEMP_CUTOFF_C      = 85.0f;  ///< Hard safety trip
 static constexpr float   FLOW_THRESHOLD_LPM =  0.5f;  ///< Min flow to trigger boost
 static constexpr float   TARGET_TANK_TEMP   = 40.0f;  ///< Base tank temp (energy-saving)
+static constexpr float   BOOST_CUTOFF_C     = 45.0f;  ///< Tank temp above which boost is not needed
 static constexpr uint8_t PWM_MAX            = 100u;   ///< 100 % on the wire
 static constexpr uint8_t PWM_OFF            =   0u;
 

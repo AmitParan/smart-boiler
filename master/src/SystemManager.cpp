@@ -67,7 +67,7 @@ SystemCommand SystemManager::process(const SystemInputs& in) const {
     // ------------------------------------------------------------------
     if (in.flowRateLPM > FLOW_THRESHOLD_LPM) {
         cmd.pwmInternal = PWM_OFF;
-        cmd.pwmBoost    = PWM_MAX;
+        cmd.pwmBoost    = (in.currentTemp < BOOST_CUTOFF_C) ? PWM_MAX : PWM_OFF;
         cmd.state       = BoilerState::STATE_SHOWER_BOOST;
         cmd.stateLabel  = labelFor(cmd.state);
         return cmd;
