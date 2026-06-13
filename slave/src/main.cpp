@@ -10,9 +10,6 @@
 #include "plc_test_sender.h"
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
-// ---------------------------------------------------------------------------
-//  SLAVE TEST MODE — now defined in config.h
-
 void setup() {
     Serial.begin(115200);
     delay(500);
