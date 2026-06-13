@@ -34,6 +34,8 @@ static float last_t_internal = 0.0f;
 static float last_flow       = 0.0f;
 static float last_power_w    = 0.0f;
 
+static SystemManager s_manager;
+
 // ---------------------------------------------------------------------------
 //  processStatusPacket
 //  Decodes a validated raw STATUS buffer and updates the UI.
@@ -165,8 +167,6 @@ static void handleManualInputs() {
 //  Builds a BoilerCmdPacket_t using SystemManager and transmits it.
 //  Called once per second from TaskMasterComms.
 // ---------------------------------------------------------------------------
-static SystemManager s_manager;
-
 static void sendCommand() {
     BoilerCmdPacket_t pkt;
     pkt.startByte  = PROTO_START;
