@@ -110,7 +110,15 @@ static void handleManualInputs() {
                        snap_cmd.stateLabel, snap_cmd.pwmInternal, snap_cmd.pwmBoost);
         Serial.println(" Commands: t=XX.X | f=X.X | on | off | plc=0 | plc=1 | live | ?");
         Serial.println("══════════════════════════════════════════════════════");
-        return;
+        Serial.print("> ");
+        // Wait here until the user types a command and presses Enter
+        while (!Serial.available()) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        line = Serial.readStringUntil('\n');
+        line.trim();
+        if (line.length() == 0) return;  // bare Enter = no change, continue
+        // fall through to command parsing below
     }
     if (line == "?") {
         Serial.println("[TEST] t=XX.X  — tank temperature (C)");
@@ -118,6 +126,7 @@ static void handleManualInputs() {
         Serial.println("[TEST] on/off  — UI boiler button");
         Serial.println("[TEST] plc=0   — simulate PLC lost");
         Serial.println("[TEST] plc=1   — restore PLC connection");
+        Serial.println("[TEST] set t=XX.X f=X.X on|off plc=0|1  — set ALL at once");
         Serial.println("[TEST] live    — switch to real sensor data");
         Serial.println("[TEST] Enter   — show current state");
         return;
@@ -157,6 +166,47 @@ static void handleManualInputs() {
         s_manFlow = line.substring(2).toFloat();
         s_manualMode = true;
         Serial.printf("[TEST] flow=%.1f L/min\n", s_manFlow);
+        return;
+    }
+    // Combined set: "set t=XX.X f=X.X on|off plc=0|1"
+    if (line.startsWith("set ") || line.startsWith("SET ")) {
+        String rest = line.substring(4);
+        float new_temp = s_manTemp;
+        float new_flow = s_manFlow;
+        bool  new_ui   = s_manUiOn;
+        bool  new_plc  = s_manPlcOk;
+        int   pos      = 0;
+        while (pos <= rest.length()) {
+            int sp = rest.indexOf(' ', pos);
+            String tok = (sp == -1) ? rest.substring(pos) : rest.substring(pos, sp);
+            tok.trim();
+            pos = (sp == -1) ? rest.length() + 1 : sp + 1;
+            if (tok.length() == 0) continue;
+            if      (tok.startsWith("t=") || tok.startsWith("T=")) new_temp = tok.substring(2).toFloat();
+            else if (tok.startsWith("f=") || tok.startsWith("F=")) new_flow = tok.substring(2).toFloat();
+            else if (tok.equalsIgnoreCase("on"))  new_ui  = true;
+            else if (tok.equalsIgnoreCase("off")) new_ui  = false;
+            else if (tok == "plc=1") new_plc = true;
+            else if (tok == "plc=0") new_plc = false;
+            else Serial.printf("[TEST] Unknown token: '%s'\n", tok.c_str());
+        }
+        s_manTemp = new_temp;  s_manFlow = new_flow;
+        s_manUiOn = new_ui;    s_manPlcOk = new_plc;
+        s_manualMode = true;
+        SystemInputs snap;
+        snap.currentTemp      = s_manTemp;
+        snap.flowRateLPM      = s_manFlow;
+        snap.targetShowerTemp = (float)target_temperature;
+        snap.uiStateOn        = s_manUiOn;
+        snap.plcConnected     = s_manPlcOk;
+        SystemCommand cmd = s_manager.process(snap);
+        Serial.println("──────────────────────────────────────────────────────");
+        Serial.printf (" SET   t=%.1f C  |  flow=%.1f L/min  |  ui=%s  |  plc=%s\n",
+                       s_manTemp, s_manFlow,
+                       s_manUiOn ? "ON" : "OFF", s_manPlcOk ? "OK" : "LOST");
+        Serial.printf (" Brain -> %-22s  pwmInt=%3u%%  pwmBst=%3u%%\n",
+                       cmd.stateLabel, cmd.pwmInternal, cmd.pwmBoost);
+        Serial.println("──────────────────────────────────────────────────────");
         return;
     }
     Serial.printf("[TEST] Unknown: '%s'  (? for help)\n", line.c_str());
