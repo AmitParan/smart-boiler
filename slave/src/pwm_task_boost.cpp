@@ -22,10 +22,12 @@ void TaskPWM_Boost(void* pvParameters) {
         uint8_t pwm_val = cmd_pwm_boost;
         bool enabled = (cmd_flags & CMD_BOOST_ENABLE) != 0u;
 
-        // Safety Interlock: prevent activation if water flow is below 1.0 L/min
-        if (!enabled || current_flow < 1.0f) {
-            pwm_val = 0;
-        }
+        // Flow interlock: bypass in SLAVE_TEST_MODE (no real flow sensor)
+#if SLAVE_TEST_MODE
+        if (!enabled) { pwm_val = 0; }
+#else
+        if (!enabled || current_flow < 1.0f) { pwm_val = 0; }
+#endif
 
         // Calculate ON and OFF times within a hardcoded 2000ms window
         int on_ms = (2000 * (int)pwm_val) / 100;

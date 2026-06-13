@@ -39,16 +39,16 @@ void TaskSafety(void* pvParameters) {
 
         // -------------------------------------------------------------------
         //  3. Uncommanded current detection (SSR short-circuit)
-        //     Threshold set to 0.5A. The ACS758-050B has an inherent noise 
-        //     floor of ~0.25A (10mV noise / 40mV/A). 0.5A safely avoids 
-        //     false positives while quickly detecting SSR leakage.
+        //     Bypassed in SLAVE_TEST_MODE (current sensor not connected).
         // -------------------------------------------------------------------
+#if !SLAVE_TEST_MODE
         bool any_commanded = (cmd_pwm_internal > 0u) || (cmd_pwm_boost > 0u);
         if (!any_commanded && current_rms > 0.5f) {
             Serial.println("[SAFETY] FAULT: Current detected without command"
-                           " — possible SSR short!");
+                           " \u2014 possible SSR short!");
             fault = true;
         }
+#endif
 
         if (fault) {
             // Hard-cut both SSRs by stopping the 1kHz hardware watchdog carrier
