@@ -42,13 +42,9 @@ void setup() {
     xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int",  4096, NULL, 3, NULL, 0);
     xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst",  4096, NULL, 3, NULL, 0);
 
-    // PLC communication — or scripted test sender
-#if SLAVE_TEST_MODE
-    Serial.println("[SLAVE TEST MODE] Starting PLC test sender");
-    xTaskCreatePinnedToCore(TaskPLCTestSender, "PLCTest", 4096, NULL, 2, NULL, 0);
-#else
+    // PLC communication — always use real task
+    // (SLAVE_TEST_MODE only bypasses safety interlocks, not comms)
     xTaskCreatePinnedToCore(TaskPLC, "PLC", 4096, NULL, 2, NULL, 0);
-#endif
 }
 
 void loop() {
