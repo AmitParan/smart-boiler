@@ -11,13 +11,7 @@
 // Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
 
 // ---------------------------------------------------------------------------
-//  SLAVE TEST MODE
-//  Set to 1 to replace real sensor data with scripted scenarios.
-//  The slave will cycle through all SystemManager states and send fake STATUS
-//  packets so the master test bench (TEST_MODE 1) can verify its logic.
-//  Set to 0 for normal operation with real sensors.
-// ---------------------------------------------------------------------------
-#define SLAVE_TEST_MODE 0
+//  SLAVE TEST MODE — now defined in config.h
 
 void setup() {
     Serial.begin(115200);

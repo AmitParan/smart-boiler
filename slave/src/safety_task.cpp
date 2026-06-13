@@ -26,14 +26,16 @@ void TaskSafety(void* pvParameters) {
         // -------------------------------------------------------------------
         //  2. Boost heater flow interlock
         //     Boost element MUST NOT run without water flow (dry-fire risk).
+        //     Bypassed in SLAVE_TEST_MODE (no flow sensor connected on bench).
         // -------------------------------------------------------------------
         bool boost_commanded = (cmd_flags & CMD_BOOST_ENABLE) &&
                                (cmd_pwm_boost > 0u);
-                               
+#if !SLAVE_TEST_MODE
         if (boost_commanded && current_flow < 1.0f) {
             Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
             fault = true;
         }
+#endif
 
         // -------------------------------------------------------------------
         //  3. Uncommanded current detection (SSR short-circuit)

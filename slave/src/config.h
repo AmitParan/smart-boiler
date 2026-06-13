@@ -47,4 +47,12 @@
 // ---------------------------------------------------------------------------
 #define STATUS_SEND_INTERVAL_MS   1000u   // slave sends status once per second
 
+// ---------------------------------------------------------------------------
+//  Test mode
+//  Set to 1 when testing without real sensors connected.
+//  Bypasses the flow interlock safety check so boost commands don't trigger
+//  a fault when the flow sensor is not physically present.
+// ---------------------------------------------------------------------------
+#define SLAVE_TEST_MODE  1   // 0 = production, 1 = bench testing (no sensors)
+
 #endif // CONFIG_H
