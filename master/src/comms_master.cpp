@@ -75,142 +75,20 @@ static void processStatusPacket(const uint8_t* raw) {
     UI_UpdatePLCStatus(true);
 }
 
-// ---------------------------------------------------------------------------
-//  Manual test inputs — feed SystemManager with controlled values via serial
-//  Press Enter at any time to see current state and available commands.
-// ---------------------------------------------------------------------------
-static bool  s_manualMode = true;    // true=manual inputs, false=live sensors
-static float s_manTemp    = 25.0f;   // tank temperature [°C]
-static float s_manFlow    = 0.0f;    // flow rate [L/min]
-static bool  s_manUiOn    = false;   // UI boiler button
-static bool  s_manPlcOk   = true;    // PLC connection state
-
-static void handleManualInputs() {
-    if (!Serial.available()) return;
-
-    String line = Serial.readStringUntil('\n');
-    line.trim();
-
-    // Empty Enter — show current state snapshot
-    if (line.length() == 0) {
-        SystemInputs snap;
-        snap.currentTemp      = s_manualMode ? s_manTemp        : last_t_internal;
-        snap.flowRateLPM      = s_manualMode ? s_manFlow        : last_flow;
-        snap.targetShowerTemp = (float)target_temperature;
-        snap.uiStateOn        = s_manualMode ? s_manUiOn        : boiler_state;
-        snap.plcConnected     = s_manualMode ? s_manPlcOk       : true;
-        SystemCommand snap_cmd = s_manager.process(snap);
-        Serial.println("══════════════════════════════════════════════════════");
-        Serial.printf (" [TEST] Mode: %s\n", s_manualMode ? "MANUAL" : "LIVE");
-        Serial.printf (" Inputs:  t=%.1f C  |  flow=%.1f L/min  |  ui=%s  |  plc=%s\n",
-                       snap.currentTemp, snap.flowRateLPM,
-                       snap.uiStateOn ? "ON" : "OFF",
-                       snap.plcConnected ? "OK" : "LOST");
-        Serial.printf (" Brain:   %-22s  ->  pwmInt=%3u%%  pwmBst=%3u%%\n",
-                       snap_cmd.stateLabel, snap_cmd.pwmInternal, snap_cmd.pwmBoost);
-        Serial.println(" Commands: t=XX.X | f=X.X | on | off | plc=0 | plc=1 | live | ?");
-        Serial.println("══════════════════════════════════════════════════════");
-        Serial.print("> ");
-        // Wait here until the user types a command and presses Enter
-        while (!Serial.available()) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
-        line = Serial.readStringUntil('\n');
-        line.trim();
-        if (line.length() == 0) return;  // bare Enter = no change, continue
-        // fall through to command parsing below
-    }
-    if (line == "?") {
-        Serial.println("[TEST] t=XX.X  — tank temperature (C)");
-        Serial.println("[TEST] f=X.X   — flow rate (L/min)");
-        Serial.println("[TEST] on/off  — UI boiler button");
-        Serial.println("[TEST] plc=0   — simulate PLC lost");
-        Serial.println("[TEST] plc=1   — restore PLC connection");
-        Serial.println("[TEST] set t=XX.X f=X.X on|off plc=0|1  — set ALL at once");
-        Serial.println("[TEST] live    — switch to real sensor data");
-        Serial.println("[TEST] Enter   — show current state");
-        return;
-    }
-    if (line.equalsIgnoreCase("on")) {
-        s_manUiOn = true;  s_manualMode = true;
-        Serial.println("[TEST] ui=ON");
-        return;
-    }
-    if (line.equalsIgnoreCase("off")) {
-        s_manUiOn = false;  s_manualMode = true;
-        Serial.println("[TEST] ui=OFF");
-        return;
-    }
-    if (line == "plc=0") {
-        s_manPlcOk = false;  s_manualMode = true;
-        Serial.println("[TEST] plc=LOST");
-        return;
-    }
-    if (line == "plc=1") {
-        s_manPlcOk = true;  s_manualMode = true;
-        Serial.println("[TEST] plc=OK");
-        return;
-    }
-    if (line.equalsIgnoreCase("live")) {
-        s_manualMode = false;
-        Serial.println("[TEST] Switched to LIVE sensor mode");
-        return;
-    }
-    if (line.startsWith("t=") || line.startsWith("T=")) {
-        s_manTemp = line.substring(2).toFloat();
-        s_manualMode = true;
-        Serial.printf("[TEST] t=%.1f C\n", s_manTemp);
-        return;
-    }
-    if (line.startsWith("f=") || line.startsWith("F=")) {
-        s_manFlow = line.substring(2).toFloat();
-        s_manualMode = true;
-        Serial.printf("[TEST] flow=%.1f L/min\n", s_manFlow);
-        return;
-    }
-    // Combined set: "set t=XX.X f=X.X on|off plc=0|1"
-    if (line.startsWith("set ") || line.startsWith("SET ")) {
-        String rest = line.substring(4);
-        float new_temp = s_manTemp;
-        float new_flow = s_manFlow;
-        bool  new_ui   = s_manUiOn;
-        bool  new_plc  = s_manPlcOk;
-        int   pos      = 0;
-        while (pos <= rest.length()) {
-            int sp = rest.indexOf(' ', pos);
-            String tok = (sp == -1) ? rest.substring(pos) : rest.substring(pos, sp);
-            tok.trim();
-            pos = (sp == -1) ? rest.length() + 1 : sp + 1;
-            if (tok.length() == 0) continue;
-            if      (tok.startsWith("t=") || tok.startsWith("T=")) new_temp = tok.substring(2).toFloat();
-            else if (tok.startsWith("f=") || tok.startsWith("F=")) new_flow = tok.substring(2).toFloat();
-            else if (tok.equalsIgnoreCase("on"))  new_ui  = true;
-            else if (tok.equalsIgnoreCase("off")) new_ui  = false;
-            else if (tok == "plc=1") new_plc = true;
-            else if (tok == "plc=0") new_plc = false;
-            else Serial.printf("[TEST] Unknown token: '%s'\n", tok.c_str());
-        }
-        s_manTemp = new_temp;  s_manFlow = new_flow;
-        s_manUiOn = new_ui;    s_manPlcOk = new_plc;
-        s_manualMode = true;
-        SystemInputs snap;
-        snap.currentTemp      = s_manTemp;
-        snap.flowRateLPM      = s_manFlow;
-        snap.targetShowerTemp = (float)target_temperature;
-        snap.uiStateOn        = s_manUiOn;
-        snap.plcConnected     = s_manPlcOk;
-        SystemCommand cmd = s_manager.process(snap);
-        Serial.println("──────────────────────────────────────────────────────");
-        Serial.printf (" SET   t=%.1f C  |  flow=%.1f L/min  |  ui=%s  |  plc=%s\n",
-                       s_manTemp, s_manFlow,
-                       s_manUiOn ? "ON" : "OFF", s_manPlcOk ? "OK" : "LOST");
-        Serial.printf (" Brain -> %-22s  pwmInt=%3u%%  pwmBst=%3u%%\n",
-                       cmd.stateLabel, cmd.pwmInternal, cmd.pwmBoost);
-        Serial.println("──────────────────────────────────────────────────────");
-        return;
-    }
-    Serial.printf("[TEST] Unknown: '%s'  (? for help)\n", line.c_str());
-}
+// ===========================================================================
+//  MANUAL TEST — edit these 4 values, save, and re-upload to see brain output
+//
+//  Expected states:
+//   STATE_OFF           →  TEST_UI_ON = false
+//   STATE_HEATING_TANK  →  TEST_UI_ON = true,  TEST_TEMP < 40,  TEST_FLOW = 0
+//   STATE_STANDBY       →  TEST_UI_ON = true,  TEST_TEMP > 40,  TEST_FLOW = 0
+//   STATE_SHOWER_BOOST  →  TEST_UI_ON = true,  TEST_FLOW > 0.5
+//   SAFETY_OVERRIDE     →  TEST_PLC = false
+// ===========================================================================
+static const float TEST_TEMP  = 25.0f;   // tank temperature [°C]
+static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
+static const bool  TEST_UI_ON = false;   // boiler ON/OFF button
+static const bool  TEST_PLC   = true;    // false = simulate PLC lost
 
 // ---------------------------------------------------------------------------
 //  sendCommand
@@ -224,21 +102,13 @@ static void sendCommand() {
     pkt.packetType = PROTO_TYPE_CMD;
     pkt.sequence   = tx_seq++;
 
-    // Build inputs — manual mode overrides real sensor data
+    // Build inputs from test values
     SystemInputs inputs;
-    if (s_manualMode) {
-        inputs.currentTemp      = s_manTemp;
-        inputs.flowRateLPM      = s_manFlow;
-        inputs.targetShowerTemp = (float)target_temperature;
-        inputs.uiStateOn        = s_manUiOn;
-        inputs.plcConnected     = s_manPlcOk;
-    } else {
-        inputs.currentTemp      = last_t_internal;
-        inputs.flowRateLPM      = last_flow;
-        inputs.targetShowerTemp = (float)target_temperature;
-        inputs.uiStateOn        = boiler_state;
-        inputs.plcConnected     = true;
-    }
+    inputs.currentTemp      = TEST_TEMP;
+    inputs.flowRateLPM      = TEST_FLOW;
+    inputs.targetShowerTemp = (float)target_temperature;
+    inputs.uiStateOn        = TEST_UI_ON;
+    inputs.plcConnected     = TEST_PLC;
 
     SystemCommand cmd = s_manager.process(inputs);
 
@@ -363,10 +233,12 @@ void TaskMasterComms(void* pvParameters) {
 
     unsigned long last_cmd_ms = millis();
 
-    Serial.println("[TEST] Manual input mode ON. Press Enter to see state, ? for commands.");
+    Serial.printf("[TEST] t=%.1f  flow=%.1f  ui=%s  plc=%s\n",
+                  TEST_TEMP, TEST_FLOW,
+                  TEST_UI_ON ? "ON" : "OFF",
+                  TEST_PLC   ? "OK" : "LOST");
 
     for (;;) {
-        handleManualInputs();
 
         if (millis() - last_cmd_ms >= 1000UL) {
             last_cmd_ms = millis();
