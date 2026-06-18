@@ -86,8 +86,8 @@ static void processStatusPacket(const uint8_t* raw) {
 //                          TEST_UI_ON = true,  TEST_FLOW > 0.5,  TEST_TEMP >= 45 (boost OFF — already warm)
 //   SAFETY_OVERRIDE     →  TEST_PLC = false
 // ===========================================================================
-static const float TEST_TEMP  = 45.0f;   // tank temperature [°C]
-static const float TEST_FLOW  = 4.0f;    // flow rate [L/min]
+static const float TEST_TEMP  = 35.0f;   // tank temperature [°C]
+static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
 static const bool  TEST_UI_ON = true;   // boiler ON/OFF button
 static const bool  TEST_PLC   = true;    // false = simulate PLC lost
 

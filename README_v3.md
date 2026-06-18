@@ -1,8 +1,8 @@
-# Smart Boiler — Project README (Branch: v3)
+# Smart Boiler — Project README (Branch: v4-freertos-refactor)
 
 Last updated: June 2026  
-Git branch: `v3`  
-Last commit: `69fbf22` — chore(slave): remove leftover SLAVE_TEST_MODE comment from main.cpp
+Git branch: `v4-freertos-refactor`  
+Last commit: `92e3133` — fix(slave): revert TaskPLC to triggered response to prevent half-duplex collision
 
 ---
 
@@ -100,14 +100,36 @@ main.cpp
 
 ```
 main.cpp
-  ├── TaskSafety    — priority 4 — runs every 50ms, hard-cuts SSRs on fault
-  ├── TaskPWM_Internal — priority 3 — drives PIN_SSR_INT (GPIO4)
-  ├── TaskPWM_Boost    — priority 3 — drives PIN_SSR_EXT (GPIO5)
-  ├── TaskFlow      — priority 2 — YF-B6 pulse counter
-  ├── TaskTemp      — priority 2 — DS18B20 readings (750ms/conversion)
-  ├── TaskCurrent   — priority 2 — ACS758 RMS current sampling
-  └── TaskPLC       — priority 2 — KQ-330 receive CMD / send STATUS
+  ├── TaskSafety       — priority 4 — runs every 50ms, mutex snapshot, hard-cuts SSRs on fault
+  ├── TaskPWM_Internal — priority 3 — mutex snapshot of cmd at burst cycle start
+  ├── TaskPWM_Boost    — priority 3 — mutex snapshot of cmd+flow, runtime mode check
+  ├── TaskFlow         — priority 2 — pulse counter ISR, mutex_flow protects write
+  ├── TaskTemp         — priority 2 — DS18B20 readings, mutex_temps protects write
+  ├── TaskCurrent      — priority 2 — ACS758 RMS sampling, mutex_current protects write
+  ├── TaskPLC          — priority 2 — triggered: send STATUS after CMD received (200ms guard)
+  └── TaskSerial       — priority 1 — serial console: 'b'=BENCH_TEST 'p'=PRODUCTION '?'=status
 ```
+
+**FreeRTOS mutex layout** (created in `setup()` before any task starts):
+| Mutex | Guards |
+|---|---|
+| `mutex_temps` | `temps[3]` — written by TaskTemp, read by TaskPLC + TaskSafety |
+| `mutex_flow` | `current_flow` — written by TaskFlow, read by TaskPLC + TaskSafety + TaskPWM_Boost |
+| `mutex_current` | `current_rms`, `power_watts` — written by TaskCurrent, read by TaskPLC + TaskSafety |
+| `mutex_cmd` | `cmd_pwm_internal/boost/flags` — written by TaskPLC, read by TaskPWM + TaskSafety |
+
+**TaskPLC communication pattern** (half-duplex KQ-330):
+```
+Master sends CMD every 1s
+  └─ Slave receives CMD
+       └─ 200ms guard (KQ-330 echo clears)
+            └─ Slave sends STATUS
+                 └─ Master receives STATUS within 3s window
+
+Heartbeat: if no CMD received for 5s, slave pushes STATUS anyway
+```
+> Key: slave must NOT transmit independently at 1s intervals — that causes
+> half-duplex collision with the master’s CMD and both packets are lost.
 
 **PWM (time-proportional burst) logic** (both SSR tasks):
 ```
@@ -263,8 +285,10 @@ Serial log format:
 | Safety: flow interlock             | ✅ CODE OK | Bypassed in SLAVE_TEST_MODE; not yet tested with real flow |
 | Safety: uncommanded current        | ⚠️ KNOWN BUG | Can false-trigger if SSR is ON at boot calibration — see §7 |
 | Boost cutoff at 45°C               | ✅ CODE OK | Boost disabled when tank temp ≥ 45°C       |
-| SLAVE_TEST_MODE                    | ✅ WORKS | Bypasses flow interlock + uncommanded-current checks for bench testing |
+| SLAVE_TEST_MODE                    | ✅ REPLACED | Now `SystemMode` enum — runtime switchable via serial ('b'/'p') |
 | Master 4-variable test harness     | ✅ WORKS | Edit TEST_TEMP/TEST_FLOW/TEST_UI_ON/TEST_PLC in comms_master.cpp |
+| FreeRTOS mutexes (4 guards)        | ✅ WORKS | mutex_temps/flow/current/cmd — no race conditions |
+| Master ↔ Slave PLC comms (v4)      | ✅ WORKS | Every 1s, no drops after collision fix |
 | 220V load actually powered         | ❌ UNTESTED | 9W LED incompatible (too low current for SSR triac). Use resistive load. |
 
 ---
@@ -387,11 +411,12 @@ pio device monitor --baud 115200
 
 ## 11. Git Branch Notes
 
-| Branch                    | Status   | Description                                  |
-|---------------------------|----------|----------------------------------------------|
-| `v3`                      | ✅ STABLE | Current working baseline — use this          |
-| `feature/system-manager-v2` | archived | All v3 commits come from here               |
-| `feature/smart-brain`     | archived | FreeRTOS rework — blocked, do not use        |
-| `main`                    | old      | Pre-PLC version                              |
+| Branch                       | Status   | Description                                  |
+|------------------------------|----------|----------------------------------------------|
+| `v4-freertos-refactor`       | ✅ STABLE | Current working baseline — use this          |
+| `v3`                         | ✅ STABLE | Previous baseline (no mutexes, SLAVE_TEST_MODE compile-time) |
+| `feature/system-manager-v2`  | archived | All v3 commits come from here               |
+| `feature/smart-brain`        | archived | FreeRTOS rework — blocked, do not use        |
+| `main`                       | old      | Pre-PLC version                              |
 
-To start working: `git checkout v3` on both machines.
+To start working: `git checkout v4-freertos-refactor` on both machines.
