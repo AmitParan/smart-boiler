@@ -2,6 +2,8 @@
 #define SHARED_DATA_H
 
 #include <Arduino.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include "boiler_protocol.h"
 
 // ---------------------------------------------------------------------------
@@ -37,8 +39,14 @@ extern volatile uint8_t cmd_flags;          // CMD_* flags from boiler_protocol.
 extern volatile bool system_fault;
 
 // ---------------------------------------------------------------------------
-//  FreeRTOS mutual exclusion (used by flow_task ISR)
+//  FreeRTOS mutual exclusion
+//  mutex_*    : Created in main.cpp before any task starts.
+//  timerMux   : Spinlock used only inside the flow sensor ISR.
 // ---------------------------------------------------------------------------
-extern portMUX_TYPE timerMux;
+extern SemaphoreHandle_t mutex_temps;    ///< guards temps[3]
+extern SemaphoreHandle_t mutex_flow;     ///< guards current_flow
+extern SemaphoreHandle_t mutex_current;  ///< guards current_rms, power_watts
+extern SemaphoreHandle_t mutex_cmd;      ///< guards cmd_pwm_internal/boost/flags
+extern portMUX_TYPE      timerMux;       ///< ISR-safe spinlock for flow pulse counter
 
 #endif // SHARED_DATA_H

@@ -18,5 +18,11 @@ volatile uint8_t cmd_flags        = 0u;
 // Safety
 volatile bool    system_fault     = false;
 
-// FreeRTOS
+// FreeRTOS mutexes (created in main.cpp setup(), before tasks start)
+SemaphoreHandle_t mutex_temps   = nullptr;
+SemaphoreHandle_t mutex_flow    = nullptr;
+SemaphoreHandle_t mutex_current = nullptr;
+SemaphoreHandle_t mutex_cmd     = nullptr;
+
+// Spinlock for flow pulse counter ISR
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;

@@ -50,20 +50,40 @@ void PLC_SendStatus() {
     pkt.packetType    = PROTO_TYPE_STATUS;
     pkt.sequence      = tx_seq++;
 
+    // ---- Snapshot sensor data under their respective mutexes ----
+    float local_temps[3] = {0.0f, 0.0f, 0.0f};
+    float local_flow     = 0.0f;
+    float local_power    = 0.0f;
+
+    if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(10)) == pdTRUE) {
+        local_temps[0] = temps[0];
+        local_temps[1] = temps[1];
+        local_temps[2] = temps[2];
+        xSemaphoreGive(mutex_temps);
+    }
+    if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+        local_flow = current_flow;
+        xSemaphoreGive(mutex_flow);
+    }
+    if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+        local_power = power_watts;
+        xSemaphoreGive(mutex_current);
+    }
+
     // Temperatures encoded as int16 × 10  (e.g. 65.2°C → 652)
-    pkt.tempInternal  = (int16_t)(temps[0] * 10.0f);
-    pkt.tempBoilerOut = (int16_t)(temps[1] * 10.0f);
-    pkt.tempBoostOut  = (int16_t)(temps[2] * 10.0f);
+    pkt.tempInternal  = (int16_t)(local_temps[0] * 10.0f);
+    pkt.tempBoilerOut = (int16_t)(local_temps[1] * 10.0f);
+    pkt.tempBoostOut  = (int16_t)(local_temps[2] * 10.0f);
 
     // Flow encoded as uint16 × 10  (e.g. 7.5 L/min → 75)
-    pkt.flowRate      = (uint16_t)(current_flow * 10.0f);
+    pkt.flowRate      = (uint16_t)(local_flow * 10.0f);
 
     // Power (integer watts)
-    pkt.powerWatts    = (uint16_t)power_watts;
+    pkt.powerWatts    = (uint16_t)local_power;
 
-    // Status bit-flags
+    // Status bit-flags (volatile bools, single-byte reads — no mutex needed)
     uint8_t status = 0u;
-    if (current_flow   >= 1.0f) status |= STATUS_FLOW_ACTIVE;
+    if (local_flow     >= 1.0f) status |= STATUS_FLOW_ACTIVE;
     if (internal_ssr_on)        status |= STATUS_INTERNAL_ON;
     if (boost_ssr_on)           status |= STATUS_BOOST_ON;
     if (system_fault)           status |= STATUS_FAULT;
@@ -83,8 +103,8 @@ void PLC_SendStatus() {
 
     Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
                   pkt.sequence,
-                  temps[0], temps[1], temps[2],
-                  current_flow, (float)pkt.powerWatts, pkt.statusByte);
+                  local_temps[0], local_temps[1], local_temps[2],
+                  local_flow, (float)pkt.powerWatts, pkt.statusByte);
 }
 
 // ---------------------------------------------------------------------------
@@ -187,15 +207,21 @@ bool PLC_ReceivePacket() {
 
                             // Emergency stop overrides everything
                             if (cmd->cmdFlags & CMD_EMERGENCY_STOP) {
-                                cmd_pwm_internal = 0u;
-                                cmd_pwm_boost    = 0u;
-                                cmd_flags        = 0u;
-                                system_fault     = true;
+                                if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                                    cmd_pwm_internal = 0u;
+                                    cmd_pwm_boost    = 0u;
+                                    cmd_flags        = 0u;
+                                    xSemaphoreGive(mutex_cmd);
+                                }
+                                system_fault = true;
                                 Serial.println("[PLC RX] *** EMERGENCY STOP ***");
                             } else {
-                                cmd_pwm_internal = cmd->pwmInternal;
-                                cmd_pwm_boost    = cmd->pwmBoost;
-                                cmd_flags        = cmd->cmdFlags;
+                                if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                                    cmd_pwm_internal = cmd->pwmInternal;
+                                    cmd_pwm_boost    = cmd->pwmBoost;
+                                    cmd_flags        = cmd->cmdFlags;
+                                    xSemaphoreGive(mutex_cmd);
+                                }
                             }
 
                             Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",

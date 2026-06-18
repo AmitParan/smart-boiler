@@ -32,7 +32,10 @@ void TaskFlow(void * pvParameters) {
         float flow = ((float)local_count) / 6.6;
         if(flow < 0.5) flow = 0.0; // Filter noise
 
-        // Update shared variable
-        current_flow = flow;
+        // Update shared variable under mutex
+        if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+            current_flow = flow;
+            xSemaphoreGive(mutex_flow);
+        }
     }
 }

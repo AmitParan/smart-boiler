@@ -23,8 +23,11 @@ void TaskTemp(void * pvParameters) {
     for (;;) {
         sensors.requestTemperatures();   // blocks ~188 ms for 10-bit
 
-        for (int i = 0; i < 3; i++) {
-            temps[i] = sensors.getTempCByIndex(i);
+        if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(50)) == pdTRUE) {
+            for (int i = 0; i < 3; i++) {
+                temps[i] = sensors.getTempCByIndex(i);
+            }
+            xSemaphoreGive(mutex_temps);
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));

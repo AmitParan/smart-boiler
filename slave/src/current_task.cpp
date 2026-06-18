@@ -53,8 +53,11 @@ void TaskCurrent(void * pvParameters) {
         // Filter noise floor
         if (rms_current < 0.2f) rms_current = 0.0f;
 
-        current_rms  = rms_current;
-        power_watts  = current_rms * 220.0f;
+        if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+            current_rms = rms_current;
+            power_watts = rms_current * 220.0f;
+            xSemaphoreGive(mutex_current);
+        }
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
