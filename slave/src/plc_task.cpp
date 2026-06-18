@@ -4,36 +4,43 @@
 #include <Arduino.h>
 
 // ---------------------------------------------------------------------------
-//  TaskPLC — periodic STATUS push + CMD receive
+//  TaskPLC — triggered STATUS response + 5s heartbeat
 //
-//  Period: STATUS_SEND_INTERVAL_MS (1000 ms), enforced with vTaskDelayUntil
-//  so execution time of PLC_SendStatus() does not cause timing drift.
+//  Protocol (half-duplex KQ-330 — only one device transmits at a time):
+//    1. Poll Serial1 every 10ms for incoming CMD from master
+//    2. When CMD received: wait 200ms guard time, then push STATUS
+//    3. Heartbeat: if no CMD received for 5s, push STATUS anyway so the
+//       master knows the slave is alive
 //
-//  Each cycle:
-//    1. Push STATUS packet to master (unconditional, ~34 ms @ 9600 baud)
-//    2. Poll Serial1 for incoming CMD packets for the remaining ~950 ms
-//    3. vTaskDelayUntil blocks for the final few ms to hit the exact period
+//  Why triggered instead of periodic unconditional push?
+//  The KQ-330 is half-duplex. Master sends CMD every ~1s and listens for
+//  STATUS for 3s. If slave also pushes every 1s independently, the two
+//  transmissions collide on the power line and both packets are lost.
+//  Triggered response guarantees the channel is quiet before slave TX.
 // ---------------------------------------------------------------------------
 void TaskPLC(void* pvParameters) {
     PLC_Init();
-    Serial.println("[PLC] Task started — periodic 1 s STATUS push");
+    Serial.println("[PLC] Task started — triggered STATUS response");
 
-    TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xPeriod = pdMS_TO_TICKS(STATUS_SEND_INTERVAL_MS);
+    uint32_t last_status_ms = millis();
 
     for (;;) {
-        // 1. Push STATUS to master
-        PLC_SendStatus();
+        bool cmd_received = PLC_ReceivePacket();
 
-        // 2. Poll for CMD packets for ~950 ms (leaves margin before next cycle)
-        const uint32_t poll_until = millis() + 950UL;
-        while ((int32_t)(poll_until - millis()) > 0) {
-            PLC_ReceivePacket();
-            vTaskDelay(pdMS_TO_TICKS(10));
+        if (cmd_received) {
+            // Guard time: let the CMD echo clear the KQ-330 channel before TX
+            vTaskDelay(pdMS_TO_TICKS(200));
+            PLC_SendStatus();
+            last_status_ms = millis();
         }
 
-        // 3. Enforce strict 1-second period — blocks for remaining time
-        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+        // Heartbeat: push STATUS if master has been silent for 5 seconds
+        if (millis() - last_status_ms >= 5000UL) {
+            PLC_SendStatus();
+            last_status_ms = millis();
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
 
