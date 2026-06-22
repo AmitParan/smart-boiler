@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Boiler — UI Redesign Mockup (800×480)</title>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/tabler-icons/2.47.0/iconfont/tabler-icons.min.css" rel="stylesheet">
+<style>
+  :root{--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+  *{box-sizing:border-box;}
+  body{margin:0;background:#cfd6de;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#1A1A2E;display:flex;flex-direction:column;align-items:center;gap:14px;padding:24px;min-height:100vh;}
+  h1{font-size:18px;font-weight:500;margin:0;color:#37474F;}
+  .caption{font-size:13px;color:#546E7A;}
+  #gz{width:800px;height:480px;position:relative;background:#F0F4F8;border-radius:8px;overflow:hidden;box-shadow:0 0 0 8px #15151c,0 18px 50px rgba(0,0,0,0.35);}
+  #gz button{font-family:inherit;cursor:pointer;}
+  #gz .screen{position:absolute;top:0;left:0;width:800px;height:480px;opacity:0;transform:translateX(26px);pointer-events:none;transition:opacity .22s ease,transform .22s ease;}
+  #gz .screen.active{opacity:1;transform:translateX(0);pointer-events:auto;}
+  #gz .seg.on{background:#1565C0;color:#fff;} #gz .seg{background:#fff;color:#1A1A2E;}
+  #gz .pad:active,#gz .tile:active,#gz .key:active,#gz .row:active,#gz .bigbtn:active{transform:scale(0.96);}
+  @keyframes gzblink{0%,49%{opacity:1}50%,100%{opacity:0}} #gzCaret{display:inline-block;width:3px;height:24px;background:#1565C0;margin-left:1px;vertical-align:-4px;animation:gzblink 1s steps(1) infinite;}
+</style>
+</head>
+<body>
+<h1>Smart Boiler — UI Redesign Mockup</h1>
+<div class="caption">800 × 480 touchscreen (ESP32-S3) · all screens connected · click tiles, the Auto badge, network rows, type a password</div>
+
+<div id="gz">
+
+  <div class="screen active" id="g-home">
+    <div style="height:55px;background:#1565C0;display:flex;align-items:center;padding:0 14px;gap:10px;">
+      <button onclick="gzGo('g-net')" aria-label="WiFi" id="gWifi" style="width:50px;height:42px;border-radius:10px;background:rgba(255,255,255,0.2);color:#E53935;border:none;display:flex;align-items:center;justify-content:center;font-size:22px;"><i class="ti ti-wifi-off"></i></button>
+      <button onclick="gzGo('g-schedule')" style="height:42px;padding:0 14px;border-radius:21px;background:#43A047;border:none;color:#fff;font-size:16px;display:flex;align-items:center;gap:6px;"><i class="ti ti-bolt"></i> Auto 06:45</button>
+      <div style="flex:1;display:flex;align-items:baseline;justify-content:center;gap:12px;"><span style="font-size:28px;color:#fff;">14:30</span><span style="font-size:14px;color:#BBCCEE;">22.06.2026</span></div>
+      <div style="display:flex;align-items:center;gap:6px;"><span style="font-size:20px;color:#FFD54F;"><i class="ti ti-sun"></i></span><span style="font-size:20px;color:#fff;">28&deg;</span></div>
+    </div>
+    <div style="display:flex;height:270px;padding:16px 18px 0;gap:18px;">
+      <div style="width:360px;display:flex;align-items:center;justify-content:center;">
+        <div style="width:218px;height:218px;border-radius:50%;background:#fff;border:8px solid #1565C0;box-shadow:0 0 24px rgba(0,0,0,0.12);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;"><span style="font-size:15px;color:#7B8794;">Water Temp</span><span style="font-size:52px;color:#1565C0;">52&deg;</span><span style="font-size:14px;color:#7B8794;">Target 60&deg;</span></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:14px;justify-content:center;">
+        <button id="gPower" class="bigbtn" style="height:150px;border-radius:28px;background:#C62828;border:none;color:#fff;font-size:46px;font-weight:500;box-shadow:0 0 24px rgba(0,0,0,0.18);transition:transform .05s;">OFF</button>
+        <div style="height:84px;border-radius:20px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;justify-content:center;gap:10px;"><i class="ti ti-droplet" style="font-size:24px;color:#7B8794;"></i><span id="gShower" style="font-size:22px;color:#E65100;">Heating up &middot; ~7 min</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:18px;padding:14px 18px;">
+      <button class="tile" onclick="gzGo('g-settings')" style="flex:1;height:116px;border-radius:22px;background:#E3F2FD;border:2px solid #BBDEFB;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .05s;"><i class="ti ti-adjustments-horizontal" style="font-size:38px;color:#1565C0;"></i><span style="font-size:20px;color:#0C447C;font-weight:500;">Settings</span></button>
+      <button class="tile" onclick="gzGo('g-net')" style="flex:1;height:116px;border-radius:22px;background:#E8F5E9;border:2px solid #C8E6C9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .05s;"><i class="ti ti-wifi" style="font-size:38px;color:#2E7D32;"></i><span style="font-size:20px;color:#1B5E20;font-weight:500;">Network</span></button>
+      <button class="tile" onclick="gzGo('g-stats')" style="flex:1;height:116px;border-radius:22px;background:#FFF3E0;border:2px solid #FFE0B2;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;transition:transform .05s;"><i class="ti ti-chart-bar" style="font-size:38px;color:#E65100;"></i><span style="font-size:20px;color:#BF360C;font-weight:500;">Stats</span></button>
+    </div>
+  </div>
+
+  <div class="screen" id="g-settings">
+    <div style="height:64px;background:#1565C0;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-home')" aria-label="Back" style="width:64px;height:48px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:26px;"><i class="ti ti-arrow-left"></i></button><span style="font-size:26px;color:#fff;font-weight:500;">Settings</span></div>
+    <div style="padding:22px;">
+      <div style="font-size:16px;color:#7B8794;margin-bottom:8px;">Target temperature</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:#fff;border:2px solid #E0E0E0;border-radius:24px;padding:14px 20px;">
+        <button class="pad" onclick="gzTgt(-5)" aria-label="Decrease" style="width:92px;height:92px;border-radius:22px;background:#E0E0E0;border:none;color:#1A1A2E;font-size:46px;transition:transform .05s;"><i class="ti ti-minus"></i></button>
+        <div style="display:flex;flex-direction:column;align-items:center;"><span id="gTgt" style="font-size:70px;color:#1565C0;font-weight:500;line-height:1;">60&deg;</span><span style="font-size:15px;color:#7B8794;">range 30&ndash;80&deg;</span></div>
+        <button class="pad" onclick="gzTgt(5)" aria-label="Increase" style="width:92px;height:92px;border-radius:22px;background:#1565C0;border:none;color:#fff;font-size:46px;transition:transform .05s;"><i class="ti ti-plus"></i></button>
+      </div>
+      <div style="display:flex;gap:16px;margin-top:20px;">
+        <button class="tile" onclick="gzGo('g-schedule')" style="flex:1;height:92px;border-radius:20px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;justify-content:center;gap:12px;transition:transform .05s;"><i class="ti ti-calendar-clock" style="font-size:32px;color:#1565C0;"></i><span style="font-size:22px;">Schedule</span></button>
+        <button class="tile" onclick="gzGo('g-tech')" style="flex:1;height:92px;border-radius:20px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;justify-content:center;gap:12px;transition:transform .05s;"><i class="ti ti-tool" style="font-size:32px;color:#7B8794;"></i><span style="font-size:22px;color:#7B8794;">Diagnostics</span></button>
+      </div>
+      <div style="font-size:13px;color:#9AA5B1;margin-top:10px;text-align:center;">(On device, Diagnostics opens via long-press)</div>
+    </div>
+  </div>
+
+  <div class="screen" id="g-schedule">
+    <div style="height:64px;background:#1565C0;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-settings')" aria-label="Back" style="width:64px;height:48px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:26px;"><i class="ti ti-arrow-left"></i></button><span style="flex:1;font-size:26px;color:#fff;font-weight:500;"><i class="ti ti-calendar-clock"></i> Schedule</span><button id="gAuto" onclick="gzAuto()" style="height:48px;padding:0 18px;border-radius:24px;background:#2E7D32;border:none;color:#fff;font-size:18px;"><i class="ti ti-bolt"></i> Auto: ON</button></div>
+    <div id="gSchBody" style="display:flex;gap:18px;padding:18px;">
+      <div style="width:372px;display:flex;flex-direction:column;gap:14px;">
+        <div style="display:flex;gap:8px;background:#E0E0E0;border-radius:16px;padding:5px;"><button id="gMs" class="seg" onclick="gzMode('s')" style="flex:1;height:54px;border-radius:12px;border:none;font-size:17px;"><i class="ti ti-brain"></i> Smart learn</button><button id="gMf" class="seg on" onclick="gzMode('f')" style="flex:1;height:54px;border-radius:12px;border:none;font-size:17px;"><i class="ti ti-clock"></i> Ready by</button></div>
+        <div id="gPf" style="display:flex;flex-direction:column;gap:12px;">
+          <div style="display:flex;gap:8px;background:#fff;border:2px solid #E0E0E0;border-radius:14px;padding:5px;"><button id="gDwk" class="seg on" onclick="gzDay('wk')" style="flex:1;height:44px;border-radius:10px;border:none;font-size:16px;">Mon&ndash;Fri</button><button id="gDwe" class="seg" onclick="gzDay('we')" style="flex:1;height:44px;border-radius:10px;border:none;font-size:16px;">Sat&ndash;Sun</button></div>
+          <div style="background:#fff;border:2px solid #E0E0E0;border-radius:18px;padding:14px;display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><button class="pad" onclick="gzT('h',1)" style="width:70px;height:48px;border-radius:12px;background:#E3F2FD;border:none;font-size:24px;color:#1565C0;transition:transform .05s;"><i class="ti ti-chevron-up"></i></button><span id="gHH" style="font-size:50px;font-weight:500;line-height:1;">07</span><button class="pad" onclick="gzT('h',-1)" style="width:70px;height:48px;border-radius:12px;background:#E3F2FD;border:none;font-size:24px;color:#1565C0;transition:transform .05s;"><i class="ti ti-chevron-down"></i></button></div>
+            <span style="font-size:42px;color:#7B8794;">:</span>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:6px;"><button class="pad" onclick="gzT('m',5)" style="width:70px;height:48px;border-radius:12px;background:#E3F2FD;border:none;font-size:24px;color:#1565C0;transition:transform .05s;"><i class="ti ti-chevron-up"></i></button><span id="gMM" style="font-size:50px;font-weight:500;line-height:1;">00</span><button class="pad" onclick="gzT('m',-5)" style="width:70px;height:48px;border-radius:12px;background:#E3F2FD;border:none;font-size:24px;color:#1565C0;transition:transform .05s;"><i class="ti ti-chevron-down"></i></button></div>
+          </div>
+        </div>
+        <div id="gPs" style="display:none;flex-direction:column;gap:10px;">
+          <div style="background:#fff;border:2px solid #E0E0E0;border-radius:18px;padding:16px;"><div style="font-size:17px;font-weight:500;margin-bottom:4px;"><i class="ti ti-brain" style="color:#1565C0;"></i> Learning your routine</div><div style="font-size:14px;color:#7B8794;margin-bottom:10px;">Watches when you shower, pre-heats automatically.</div><div style="display:flex;justify-content:space-between;font-size:14px;color:#7B8794;margin-bottom:6px;"><span>Day 4 of 7</span><span>57%</span></div><div style="height:14px;border-radius:7px;background:#E0E0E0;overflow:hidden;"><div style="width:57%;height:100%;background:#1565C0;"></div></div></div>
+          <div style="background:#fff;border:2px solid #E0E0E0;border-radius:18px;padding:16px;display:flex;align-items:center;justify-content:space-between;"><span style="font-size:16px;">Detected time</span><span style="font-size:24px;font-weight:500;color:#1565C0;">~06:55</span></div>
+        </div>
+      </div>
+      <div style="width:392px;display:flex;flex-direction:column;gap:14px;">
+        <div style="background:#fff;border:2px solid #BBDEFB;border-radius:20px;padding:20px;"><div style="font-size:16px;color:#7B8794;">Next auto pre-heat</div><div id="gNext" style="font-size:58px;font-weight:500;color:#1565C0;line-height:1.1;">06:45</div><div style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:17px;color:#E65100;"><i class="ti ti-sun"></i> Adjusted &minus;3 min &middot; warm day</div><div style="font-size:15px;color:#7B8794;margin-top:8px;">Tank 40&deg; &rarr; target 55&deg; &middot; ~15 min lead</div></div>
+        <button style="height:66px;border-radius:18px;background:#fff;border:2px solid #F0997B;color:#993C1D;font-size:20px;display:flex;align-items:center;justify-content:center;gap:10px;"><i class="ti ti-player-skip-forward"></i> Skip auto today</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="g-net">
+    <div style="height:64px;background:#1565C0;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-home')" aria-label="Back" style="width:64px;height:48px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:26px;"><i class="ti ti-arrow-left"></i></button><span style="flex:1;font-size:26px;color:#fff;font-weight:500;"><i class="ti ti-wifi"></i> Network</span><button style="height:48px;padding:0 20px;border-radius:12px;background:rgba(255,255,255,0.25);border:none;color:#fff;font-size:18px;"><i class="ti ti-refresh"></i> Scan</button></div>
+    <div style="padding:14px 18px;">
+      <div id="gNetStat" style="font-size:17px;color:#C62828;margin-bottom:10px;"><i class="ti ti-alert-circle"></i> Not connected</div>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <button class="row" onclick="gzPwd('Avivi-Home')" style="height:64px;border-radius:16px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;gap:14px;padding:0 18px;transition:transform .05s;"><i class="ti ti-wifi" style="font-size:28px;color:#1565C0;"></i><span style="flex:1;text-align:left;font-size:22px;">Avivi-Home</span><span style="font-size:15px;color:#7B8794;">-48 dBm</span><i class="ti ti-lock" style="font-size:20px;color:#7B8794;"></i></button>
+        <button class="row" onclick="gzPwd('Boiler-Guest')" style="height:64px;border-radius:16px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;gap:14px;padding:0 18px;transition:transform .05s;"><i class="ti ti-wifi" style="font-size:28px;color:#1565C0;"></i><span style="flex:1;text-align:left;font-size:22px;">Boiler-Guest</span><span style="font-size:15px;color:#7B8794;">-65 dBm</span><i class="ti ti-lock" style="font-size:20px;color:#7B8794;"></i></button>
+        <button class="row" onclick="gzPwd('Neighbor_5G')" style="height:64px;border-radius:16px;background:#fff;border:2px solid #E0E0E0;display:flex;align-items:center;gap:14px;padding:0 18px;transition:transform .05s;"><i class="ti ti-wifi-2" style="font-size:28px;color:#1565C0;"></i><span style="flex:1;text-align:left;font-size:22px;">Neighbor_5G</span><span style="font-size:15px;color:#7B8794;">-78 dBm</span><i class="ti ti-lock" style="font-size:20px;color:#7B8794;"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="screen" id="g-pwd">
+    <div style="height:60px;background:#1565C0;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-net')" aria-label="Back" style="width:60px;height:46px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:24px;"><i class="ti ti-arrow-left"></i></button><span style="font-size:22px;color:#fff;font-weight:500;">Connect to <span id="gSsid">&mdash;</span></span></div>
+    <div style="padding:9px 14px;"><div style="display:flex;gap:10px;align-items:center;"><div style="flex:1;height:52px;border-radius:12px;background:#fff;border:2px solid #1565C0;display:flex;align-items:center;padding:0 12px;gap:8px;"><i class="ti ti-key" style="font-size:20px;color:#7B8794;"></i><span style="flex:1;font-size:23px;letter-spacing:2px;min-height:26px;white-space:nowrap;overflow:hidden;"><span id="gField"></span><span id="gzCaret"></span></span><button id="gEye" onclick="gzEye()" aria-label="Show password" style="width:42px;height:42px;border-radius:10px;background:#E8F0FE;border:none;color:#1565C0;font-size:20px;"><i class="ti ti-eye-off"></i></button></div><button onclick="gzConn()" id="gConnBtn" style="height:52px;padding:0 22px;border-radius:12px;background:#2E7D32;border:none;color:#fff;font-size:19px;">Connect</button></div></div>
+    <div id="gKbd" style="position:absolute;bottom:0;left:0;width:800px;padding:6px 10px 12px;display:flex;flex-direction:column;gap:7px;"></div>
+    <div id="gModal" style="display:none;position:absolute;top:0;left:0;width:800px;height:480px;background:rgba(10,12,20,0.5);align-items:center;justify-content:center;"><div style="width:480px;background:#fff;border-radius:24px;padding:28px;text-align:center;"><div style="width:72px;height:72px;border-radius:50%;background:#E8F5E9;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;"><i class="ti ti-wifi" style="font-size:38px;color:#2E7D32;"></i></div><div style="font-size:24px;font-weight:500;margin-bottom:6px;">Connected to <span id="gMSsid">&mdash;</span></div><div style="font-size:18px;color:#7B8794;margin-bottom:22px;">Save this password so you won't<br>need to type it again next time?</div><div style="display:flex;gap:14px;"><button onclick="gzSave('no')" style="flex:1;height:64px;border-radius:16px;background:#fff;border:2px solid #CFD8DC;color:#546E7A;font-size:20px;">Not now</button><button onclick="gzSave('yes')" style="flex:1;height:64px;border-radius:16px;background:#2E7D32;border:none;color:#fff;font-size:20px;"><i class="ti ti-device-floppy"></i> Save</button></div></div></div>
+  </div>
+
+  <div class="screen" id="g-stats">
+    <div style="height:64px;background:#1565C0;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-home')" aria-label="Back" style="width:64px;height:48px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:26px;"><i class="ti ti-arrow-left"></i></button><span style="flex:1;font-size:26px;color:#fff;font-weight:500;"><i class="ti ti-chart-bar"></i> Stats</span><span style="font-size:15px;color:#BBCCEE;">Last 7 days</span></div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;background:#fff;border:2px solid #E0E0E0;border-radius:16px;padding:12px 14px;"><div style="font-size:13px;color:#7B8794;">Showers ready</div><div style="font-size:30px;font-weight:500;color:#2E7D32;">2</div></div>
+        <div style="flex:1;background:#fff;border:2px solid #E0E0E0;border-radius:16px;padding:12px 14px;"><div style="font-size:13px;color:#7B8794;">Energy today</div><div style="font-size:30px;font-weight:500;color:#1565C0;">1.8<span style="font-size:15px;color:#7B8794;"> kWh</span></div></div>
+        <div style="flex:1;background:#fff;border:2px solid #E0E0E0;border-radius:16px;padding:12px 14px;"><div style="font-size:13px;color:#7B8794;">Avg shower</div><div style="font-size:30px;font-weight:500;">9<span style="font-size:15px;color:#7B8794;"> min</span></div></div>
+        <div style="flex:1;background:#fff;border:2px solid #BBDEFB;border-radius:16px;padding:12px 14px;"><div style="font-size:13px;color:#7B8794;">Detected</div><div style="font-size:30px;font-weight:500;color:#E65100;">06:55</div></div>
+      </div>
+      <div style="background:#fff;border:2px solid #E0E0E0;border-radius:18px;padding:16px 18px;"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;"><span style="font-size:18px;font-weight:500;">When you usually shower</span><span style="font-size:14px;color:#7B8794;"><span style="display:inline-block;width:12px;height:12px;background:#E65100;border-radius:3px;vertical-align:-1px;"></span> learned peak</span></div><div id="gHisto" style="display:flex;align-items:flex-end;gap:3px;height:150px;"></div><div style="display:flex;justify-content:space-between;font-size:13px;color:#9AA5B1;margin-top:6px;"><span>00:00</span><span>06:00</span><span>12:00</span><span>18:00</span><span>23:00</span></div></div>
+    </div>
+  </div>
+
+  <div class="screen" id="g-tech">
+    <div style="height:64px;background:#37474F;display:flex;align-items:center;padding:0 12px;gap:12px;"><button onclick="gzGo('g-settings')" aria-label="Back" style="width:64px;height:48px;border-radius:12px;background:rgba(255,255,255,0.2);border:none;color:#fff;font-size:26px;"><i class="ti ti-arrow-left"></i></button><span style="font-size:24px;color:#fff;font-weight:500;"><i class="ti ti-tool"></i> Diagnostics</span></div>
+    <div style="padding:16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;font-family:var(--mono);">
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">T internal</div><div style="font-size:25px;color:#4FC3F7;">52.3&deg;C</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">T boost out</div><div style="font-size:25px;color:#4FC3F7;">48.1&deg;C</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">Flow</div><div style="font-size:25px;color:#81C784;">0.0 L/m</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">Power</div><div style="font-size:25px;color:#FFB74D;">0 W</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">PLC</div><div style="font-size:25px;color:#E57373;">No Signal</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">SSR int/boost</div><div style="font-size:25px;color:#B0BEC5;">off/off</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">Seq</div><div style="font-size:25px;color:#B0BEC5;">#1042</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">Free heap</div><div style="font-size:25px;color:#B0BEC5;">182 kB</div></div>
+      <div style="background:#263238;border-radius:12px;padding:14px;color:#B0BEC5;"><div style="font-size:13px;">Uptime</div><div style="font-size:25px;color:#B0BEC5;">04:12</div></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  function go(id){document.querySelectorAll('#gz .screen').forEach(function(s){s.classList.remove('active');});document.getElementById(id).classList.add('active');}
+  window.gzGo=go;
+  var on=false,gp=document.getElementById('gPower'),gs=document.getElementById('gShower');
+  gp.addEventListener('click',function(){on=!on;gp.style.background=on?'#2E7D32':'#C62828';gp.textContent=on?'ON':'OFF';if(on){gs.textContent='1 Shower ready';gs.style.color='#2E7D32';}else{gs.textContent='Heating up · ~7 min';gs.style.color='#E65100';}});
+  var tgt=60;window.gzTgt=function(d){tgt=Math.min(80,Math.max(30,tgt+d));document.getElementById('gTgt').textContent=tgt+'°';};
+  var hh=7,mm=0,day={wk:[7,0],we:[9,0]},cur='wk',auto=true;
+  function pad(n){return(n<10?'0':'')+n;}
+  function rt(){document.getElementById('gHH').textContent=pad(hh);document.getElementById('gMM').textContent=pad(mm);var t=hh*60+mm-15;if(t<0)t+=1440;document.getElementById('gNext').textContent=pad(Math.floor(t/60))+':'+pad(t%60);}
+  window.gzT=function(u,d){if(u==='h')hh=(hh+d+24)%24;else mm=(mm+d+60)%60;day[cur]=[hh,mm];rt();};
+  window.gzDay=function(d){cur=d;document.getElementById('gDwk').className='seg'+(d==='wk'?' on':'');document.getElementById('gDwe').className='seg'+(d==='we'?' on':'');hh=day[d][0];mm=day[d][1];rt();};
+  window.gzMode=function(m){document.getElementById('gMs').className='seg'+(m==='s'?' on':'');document.getElementById('gMf').className='seg'+(m==='f'?' on':'');document.getElementById('gPf').style.display=(m==='f')?'flex':'none';document.getElementById('gPs').style.display=(m==='s')?'flex':'none';};
+  window.gzAuto=function(){auto=!auto;var b=document.getElementById('gAuto');b.style.background=auto?'#2E7D32':'#9AA5B1';b.innerHTML='<i class="ti ti-bolt"></i> Auto: '+(auto?'ON':'OFF');document.getElementById('gSchBody').style.opacity=auto?'1':'0.45';};
+  var pwd='',reveal=false,ssid='';
+  function dr(){document.getElementById('gField').textContent=pwd?(reveal?pwd:'•'.repeat(pwd.length)):'';}
+  window.gzPwd=function(s){ssid=s;pwd='';reveal=false;document.getElementById('gSsid').textContent=s;document.getElementById('gMSsid').textContent=s;document.getElementById('gEye').innerHTML='<i class="ti ti-eye-off"></i>';dr();go('g-pwd');};
+  window.gzEye=function(){reveal=!reveal;document.getElementById('gEye').innerHTML=reveal?'<i class="ti ti-eye"></i>':'<i class="ti ti-eye-off"></i>';dr();};
+  window.gzConn=function(){var b=document.getElementById('gConnBtn');b.textContent='Connecting…';b.style.background='#9AA5B1';setTimeout(function(){b.innerHTML='Connect';b.style.background='#2E7D32';document.getElementById('gModal').style.display='flex';},700);};
+  window.gzSave=function(c){document.getElementById('gModal').style.display='none';var st=document.getElementById('gNetStat');st.innerHTML='<i class="ti ti-circle-check"></i> Connected to '+ssid;st.style.color='#2E7D32';var w=document.getElementById('gWifi');w.style.color='#69F0AE';w.innerHTML='<i class="ti ti-wifi"></i>';go('g-net');};
+  var rows=[['1','2','3','4','5','6','7','8','9','0'],['q','w','e','r','t','y','u','i','o','p'],['a','s','d','f','g','h','j','k','l'],['z','x','c','v','b','n','m']];
+  var kbd=document.getElementById('gKbd');
+  rows.forEach(function(r){var d=document.createElement('div');d.style.cssText='display:flex;gap:6px;justify-content:center;';r.forEach(function(k){var b=document.createElement('button');b.className='key';b.textContent=k;b.style.cssText='flex:1;max-width:74px;height:62px;border-radius:11px;background:#fff;border:2px solid #E0E0E0;font-size:24px;transition:transform .05s;';b.onclick=function(){pwd+=k;dr();};d.appendChild(b);});kbd.appendChild(d);});
+  var last=document.createElement('div');last.style.cssText='display:flex;gap:6px;justify-content:center;';
+  var sh=document.createElement('button');sh.className='key';sh.setAttribute('aria-label','Shift');sh.innerHTML='<i class="ti ti-arrow-big-up"></i>';sh.style.cssText='flex:1;max-width:88px;height:62px;border-radius:11px;background:#ECEFF1;border:2px solid #E0E0E0;font-size:24px;color:#546E7A;';
+  var num=document.createElement('button');num.className='key';num.textContent='?123';num.style.cssText='flex:1;max-width:88px;height:62px;border-radius:11px;background:#ECEFF1;border:2px solid #E0E0E0;font-size:18px;color:#546E7A;';
+  var space=document.createElement('button');space.className='key';space.textContent='space';space.style.cssText='flex:3;height:62px;border-radius:11px;background:#fff;border:2px solid #E0E0E0;font-size:18px;color:#7B8794;';space.onclick=function(){pwd+=' ';dr();};
+  var bk=document.createElement('button');bk.className='key';bk.setAttribute('aria-label','Backspace');bk.innerHTML='<i class="ti ti-backspace"></i>';bk.style.cssText='flex:1;max-width:100px;height:62px;border-radius:11px;background:#FBE9E7;border:2px solid #FFCCBC;font-size:26px;color:#C62828;';bk.onclick=function(){pwd=pwd.slice(0,-1);dr();};
+  last.appendChild(sh);last.appendChild(num);last.appendChild(space);last.appendChild(bk);kbd.appendChild(last);
+  var data=[0,0,0,0,0,1,5,8,3,1,0,0,1,0,0,0,0,1,3,6,4,1,0,0],max=Math.max.apply(null,data),peak=data.indexOf(max),hc=document.getElementById('gHisto');
+  data.forEach(function(v,i){var bar=document.createElement('div');var pct=Math.round(v/max*100);bar.style.cssText='flex:1;border-radius:4px 4px 0 0;min-height:4px;height:'+(pct||3)+'%;background:'+(i===peak?'#E65100':(v>0?'#1565C0':'#D6DEE8'))+';';bar.title=pad(i)+':00 — '+v+' showers';hc.appendChild(bar);});
+})();
+</script>
+</body>
+</html>
