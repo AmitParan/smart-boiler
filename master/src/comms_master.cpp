@@ -112,6 +112,7 @@ static void sendCommand() {
     inputs.plcConnected     = TEST_PLC;
 
     SystemCommand cmd = s_manager.process(inputs);
+    UI_UpdateSystemMode(cmd.stateLabel);
 
     pkt.pwmInternal = cmd.pwmInternal;
     pkt.pwmBoost    = cmd.pwmBoost;
