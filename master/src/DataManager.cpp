@@ -5,6 +5,7 @@
 #define SETTINGS_FILE "/settings.json"
 #define LOGS_FILE "/logs.json"
 #define MAX_LOG_ENTRIES 50  // Keep it small
+#define WATER_USAGE_FILE "/water_usage.json"
 
 void DataManager::init() {
     if (!SPIFFS.begin(true)) {
@@ -243,6 +244,51 @@ void DataManager::clearOldLogs() {
     if (SPIFFS.remove(LOGS_FILE)) {
         Serial.println("Old logs cleared");
     }
+}
+
+// ==================== Water Usage Tracking ====================
+bool DataManager::saveWaterUsage(int dayOfYear, const float* hourlyLiters, const float* hourlyTemps, int hours) {
+    DynamicJsonDocument doc(2048);
+    doc["day"] = dayOfYear;
+
+    JsonArray liters = doc.createNestedArray("liters");
+    JsonArray temps  = doc.createNestedArray("temps");
+    for (int i = 0; i < hours; i++) {
+        liters.add(hourlyLiters[i]);
+        temps.add(hourlyTemps[i]);
+    }
+
+    File file = SPIFFS.open(WATER_USAGE_FILE, "w");
+    if (!file) {
+        Serial.println("Failed to open water usage file for writing");
+        return false;
+    }
+
+    serializeJson(doc, file);
+    file.close();
+    return true;
+}
+
+bool DataManager::loadWaterUsage(int& dayOfYear, float* hourlyLiters, float* hourlyTemps, int hours) {
+    if (!SPIFFS.exists(WATER_USAGE_FILE)) {
+        return false;
+    }
+
+    File file = SPIFFS.open(WATER_USAGE_FILE, "r");
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error || !doc.containsKey("day")) {
+        return false;
+    }
+
+    dayOfYear = doc["day"];
+    JsonArray liters = doc["liters"].as<JsonArray>();
+    JsonArray temps  = doc["temps"].as<JsonArray>();
+    for (int i = 0; i < hours && i < (int)liters.size(); i++) hourlyLiters[i] = liters[i];
+    for (int i = 0; i < hours && i < (int)temps.size();  i++) hourlyTemps[i]  = temps[i];
+    return true;
 }
 
 // ==================== Utility ====================

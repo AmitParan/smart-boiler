@@ -10,6 +10,7 @@ void UI_UpdateTime(int hour, int minute);
 void UI_UpdateDate(const char* date_str);
 void UI_UpdateWiFiStatus();
 void fetchWeather();
+void fetchSolarForecast();
 void checkScreensaver();
 
 // Extended home screen updates (all live packet fields)

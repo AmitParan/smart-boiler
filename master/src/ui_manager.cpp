@@ -9,12 +9,13 @@
 #include <ArduinoJson.h>
 #include <esp_display_panel.hpp>
 #include <lvgl.h>
+#include <time.h>
 #include "lvgl_v8_port.h"
 #include "config.h"
 #include "DataManager.h"
 
 #define WEATHER_API_KEY      "7a1028898a2cdcc08a58a8109fb061e4"  // local only - do not commit
-#define WEATHER_CITY         "Tel Aviv"
+#define WEATHER_CITY         "Tel%20Aviv"  // URL-encoded space; a literal space breaks the request
 #define WEATHER_COUNTRY_CODE "IL"
 #define SETUP_AP_SSID        "Boiler-Setup"
 
@@ -49,6 +50,7 @@ static lv_obj_t* page_network      = NULL;
 static lv_obj_t* page_password     = NULL;
 static lv_obj_t* page_stats        = NULL;
 static lv_obj_t* page_diagnostics  = NULL;
+static lv_obj_t* page_solar        = NULL;
 
 // ---------------------------------------------------------------------------
 //  Widget pointers — Home
@@ -124,8 +126,16 @@ static lv_obj_t* lbl_skip_btn       = NULL;
 static lv_obj_t* lbl_stat_power = NULL;
 static lv_obj_t* lbl_stat_flow  = NULL;
 static lv_obj_t* lbl_stat_plc   = NULL;
-static lv_obj_t* bar_temp_progress = NULL;
-static lv_obj_t* lbl_temp_progress_text = NULL;
+static lv_obj_t* lbl_usage_today = NULL;
+static lv_obj_t* chart_usage     = NULL;
+static lv_chart_series_t* ser_usage = NULL;
+
+// ---------------------------------------------------------------------------
+//  Widget pointers — Solar forecast page
+// ---------------------------------------------------------------------------
+static lv_obj_t* lbl_solar_peak  = NULL;
+static lv_obj_t* chart_solar     = NULL;
+static lv_chart_series_t* ser_solar = NULL;
 
 static lv_obj_t* lbl_diag_tint   = NULL;
 static lv_obj_t* lbl_diag_tboost = NULL;
@@ -155,8 +165,18 @@ int    target_temperature = 60;
 bool   wifi_connected     = false;
 char   selected_network[64] = "";
 String scanned_networks[20];
+int    scanned_rssi[20];
 int    num_networks         = 0;
 unsigned long last_weather_update = 0;
+
+// Water usage tracking (Stats page) — 24 hourly buckets, reset at midnight,
+// persisted to flash so a reboot doesn't lose today's progress.
+#define USAGE_HOURS 24
+static float g_hourly_liters[USAGE_HOURS] = {0};
+static float g_hourly_temp[USAGE_HOURS]   = {0};
+static int   g_usage_day             = -1;   // day-of-year; -1 = not loaded yet
+static unsigned long g_last_usage_ms      = 0;
+static unsigned long g_last_usage_save_ms = 0;
 
 // Schedule — local UI state only. No scheduling backend exists on this
 // branch (SystemManager has no auto-preheat support), so this page is a
@@ -206,9 +226,18 @@ static int scanForNetworks() {
     int found = performWifiScan();
     if (found < 0) found = performWifiScan();
 
+    // Capture results now, before the mode switch below invalidates the
+    // scan cache (WiFi.mode()/WiFi.begin() clears WiFi.SSID(i)/RSSI(i)).
+    for (int i = 0; i < found && i < 20; i++) {
+        scanned_networks[i] = WiFi.SSID(i);
+        scanned_rssi[i]     = WiFi.RSSI(i);
+    }
+
     if (was_connected) {
         WiFi.mode(WIFI_STA);
         WiFi.begin(cur_ssid.c_str(), cur_psk.c_str());
+        int timeout = 10; // up to ~5s, matches attempt_wifi_connect()'s pacing
+        while (WiFi.status() != WL_CONNECTED && timeout-- > 0) delay(500);
     } else {
         restoreSetupApIfNeeded();
     }
@@ -220,7 +249,7 @@ static int scanForNetworks() {
 // ---------------------------------------------------------------------------
 static void show_page(lv_obj_t* target) {
     lv_obj_t* pages[] = { page_home, page_settings, page_schedule, page_network,
-                          page_password, page_stats, page_diagnostics };
+                          page_password, page_stats, page_diagnostics, page_solar };
     for (lv_obj_t* p : pages) {
         if (p == NULL) continue;
         if (p == target) lv_obj_clear_flag(p, LV_OBJ_FLAG_HIDDEN);
@@ -429,7 +458,6 @@ static void rebuild_network_list() {
     lv_obj_clean(net_list_container);
 
     num_networks = scanForNetworks();
-    for (int i = 0; i < num_networks && i < 20; i++) scanned_networks[i] = WiFi.SSID(i);
 
     if (num_networks <= 0) {
         lv_obj_t* lbl = lv_label_create(net_list_container);
@@ -462,11 +490,12 @@ static void rebuild_network_list() {
         lv_obj_t* name = lv_label_create(row);
         lv_label_set_text(name, scanned_networks[i].c_str());
         lv_obj_set_style_text_font(name, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_color(name, CLR_TEXT, 0);
         lv_obj_set_flex_grow(name, 1);
 
         lv_obj_t* rssi = lv_label_create(row);
         char rbuf[16];
-        snprintf(rbuf, sizeof(rbuf), "%d dBm", WiFi.RSSI(i));
+        snprintf(rbuf, sizeof(rbuf), "%d dBm", scanned_rssi[i]);
         lv_label_set_text(rssi, rbuf);
         lv_obj_set_style_text_font(rssi, &lv_font_montserrat_14, 0);
         lv_obj_set_style_text_color(rssi, CLR_SUBTEXT, 0);
@@ -650,6 +679,7 @@ static void sched_skip_cb(lv_event_t* e) {
 static void goto_schedule_cb(lv_event_t* e) { last_touch_time = millis(); show_page(page_schedule); }
 static void goto_settings_cb(lv_event_t* e) { last_touch_time = millis(); show_page(page_settings); }
 static void goto_stats_cb(lv_event_t* e)    { last_touch_time = millis(); show_page(page_stats); }
+static void goto_solar_cb(lv_event_t* e)    { last_touch_time = millis(); show_page(page_solar); }
 static void goto_diagnostics_cb(lv_event_t* e) { last_touch_time = millis(); show_page(page_diagnostics); }
 
 // ---------------------------------------------------------------------------
@@ -662,16 +692,196 @@ void fetchWeather() {
                  + String(WEATHER_CITY) + "," + String(WEATHER_COUNTRY_CODE)
                  + "&appid=" + String(WEATHER_API_KEY) + "&units=metric";
     http.begin(url);
-    if (http.GET() == 200) {
+    int code = http.GET();
+    if (code == 200) {
         JsonDocument doc;
         if (!deserializeJson(doc, http.getString())) {
             float       temp      = doc["main"]["temp"];
             const char* condition = doc["weather"][0]["main"];
             UI_UpdateWeather(temp, condition);
             last_weather_update = millis();
+        } else {
+            Serial.println("Weather fetch: failed to parse JSON response");
         }
+    } else {
+        Serial.printf("Weather fetch failed, HTTP code: %d\n", code);
     }
     http.end();
+}
+
+// ---------------------------------------------------------------------------
+//  Solar irradiance forecast (Open-Meteo, no API key required)
+//  forecast_days=1 -> exactly 24 hourly entries, so array index == hour.
+// ---------------------------------------------------------------------------
+#define SOLAR_HOURS 24
+#define SOLAR_FORECAST_URL \
+    "https://api.open-meteo.com/v1/forecast?latitude=32.08&longitude=34.78" \
+    "&hourly=shortwave_radiation,direct_radiation,diffuse_radiation" \
+    "&timezone=Asia%2FJerusalem&forecast_days=1"
+
+static float g_solar_ghi[SOLAR_HOURS]     = {0};   // shortwave_radiation (W/m^2) - main panel-output signal
+static float g_solar_direct[SOLAR_HOURS]  = {0};
+static float g_solar_diffuse[SOLAR_HOURS] = {0};
+static bool  g_solar_loaded = false;
+
+// Peak irradiance, in plain words, for someone who doesn't know whether
+// "910 W/m2" is a lot: clear-sky solar noon tops out around 1000 W/m2.
+static const char* solarLevelLabel(float w) {
+    if (w >= 650.0f) return "High";
+    if (w >= 300.0f) return "Moderate";
+    return "Low";
+}
+
+static lv_color_t solarLevelColor(float w) {
+    if (w >= 650.0f) return lv_palette_main(LV_PALETTE_GREEN);
+    if (w >= 300.0f) return lv_palette_main(LV_PALETTE_ORANGE);
+    return CLR_SUBTEXT;
+}
+
+// Pushes the in-memory forecast into the Solar page chart, if built.
+static void refreshSolarChart() {
+    if (chart_solar == NULL || ser_solar == NULL) return;
+
+    float peak_val = 0.0f;
+    int   peak_hr  = 0;
+    for (int i = 0; i < SOLAR_HOURS; i++) {
+        lv_chart_set_value_by_id(chart_solar, ser_solar, i, (lv_coord_t)(g_solar_ghi[i] + 0.5f));
+        if (g_solar_ghi[i] > peak_val) { peak_val = g_solar_ghi[i]; peak_hr = i; }
+    }
+    lv_chart_refresh(chart_solar);
+
+    if (lbl_solar_peak != NULL) {
+        char buf[48];
+        if (g_solar_loaded) {
+            snprintf(buf, sizeof(buf), "Peak: %.0f W/m2 at %02d:00 (%s)",
+                     peak_val, peak_hr, solarLevelLabel(peak_val));
+            lv_obj_set_style_text_color(lbl_solar_peak, solarLevelColor(peak_val), 0);
+        } else {
+            snprintf(buf, sizeof(buf), "Peak: -- W/m2");
+            lv_obj_set_style_text_color(lbl_solar_peak, CLR_SUBTEXT, 0);
+        }
+        lv_label_set_text(lbl_solar_peak, buf);
+    }
+}
+
+// Formats major X-axis ticks as "HH:00" for our 24-hour charts. Pairs with
+// lv_chart_set_axis_tick(..., major_cnt=5, minor_cnt=1, ...) so tick
+// ordinal 0..4 maps to hour 0, 6, 12, 18, 24.
+static void hourly_chart_x_tick_cb(lv_event_t* e) {
+    lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
+    if (dsc->type != LV_CHART_DRAW_PART_TICK_LABEL) return;
+    if (dsc->id != LV_CHART_AXIS_PRIMARY_X || dsc->text == NULL) return;
+    lv_snprintf(dsc->text, dsc->text_length, "%02d:00", (int)dsc->value * 6);
+}
+
+void fetchSolarForecast() {
+    if (WiFi.status() != WL_CONNECTED) return;
+    HTTPClient http;
+    http.begin(SOLAR_FORECAST_URL);
+    int code = http.GET();
+    if (code == 200) {
+        JsonDocument doc;
+        if (!deserializeJson(doc, http.getString())) {
+            JsonArray ghi     = doc["hourly"]["shortwave_radiation"];
+            JsonArray direct  = doc["hourly"]["direct_radiation"];
+            JsonArray diffuse = doc["hourly"]["diffuse_radiation"];
+            for (int i = 0; i < SOLAR_HOURS && i < (int)ghi.size();     i++) g_solar_ghi[i]     = ghi[i];
+            for (int i = 0; i < SOLAR_HOURS && i < (int)direct.size();  i++) g_solar_direct[i]  = direct[i];
+            for (int i = 0; i < SOLAR_HOURS && i < (int)diffuse.size(); i++) g_solar_diffuse[i] = diffuse[i];
+            g_solar_loaded = true;
+            if (lvgl_port_lock(UI_REFRESH_RATE)) {
+                refreshSolarChart();
+                lvgl_port_unlock();
+            }
+        } else {
+            Serial.println("Solar forecast: failed to parse JSON response");
+        }
+    } else {
+        Serial.printf("Solar forecast fetch failed, HTTP code: %d\n", code);
+    }
+    http.end();
+}
+
+// ---------------------------------------------------------------------------
+//  Water usage tracking (Stats page)
+//  Blue (cool) -> red (hot) color scale used to encode each hour's tank
+//  temperature on the usage chart's bars.
+// ---------------------------------------------------------------------------
+static lv_color_t usageTempToColor(float t) {
+    float f = (t - 20.0f) / 50.0f;   // 20-70 degC mapped to 0-1
+    if (f < 0.0f) f = 0.0f;
+    if (f > 1.0f) f = 1.0f;
+    uint8_t r = (uint8_t)(0x64 + f * (0xD3 - 0x64));
+    uint8_t g = (uint8_t)(0xB5 + f * (0x2F - 0xB5));
+    uint8_t b = (uint8_t)(0xF6 + f * (0x2F - 0xF6));
+    return lv_color_make(r, g, b);
+}
+
+static void usage_chart_draw_event_cb(lv_event_t* e) {
+    lv_obj_draw_part_dsc_t* dsc = lv_event_get_draw_part_dsc(e);
+    if (dsc->part != LV_PART_ITEMS || dsc->type != LV_CHART_DRAW_PART_BAR) return;
+    if (dsc->id < 0 || dsc->id >= USAGE_HOURS) return;
+    dsc->rect_dsc->bg_color = usageTempToColor(g_hourly_temp[dsc->id]);
+}
+
+// Pushes the in-memory hourly buckets into the Stats page chart, if built.
+static void refreshUsageChart() {
+    if (chart_usage == NULL || ser_usage == NULL) return;
+    float total = 0.0f;
+    for (int i = 0; i < USAGE_HOURS; i++) {
+        lv_chart_set_value_by_id(chart_usage, ser_usage, i, (lv_coord_t)(g_hourly_liters[i] + 0.5f));
+        total += g_hourly_liters[i];
+    }
+    lv_chart_refresh(chart_usage);
+    if (lbl_usage_today != NULL) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "Today: %.0f L", total);
+        lv_label_set_text(lbl_usage_today, buf);
+    }
+}
+
+// Called once per second from UI_UpdateSensorData with the live flow/temp
+// readings. Integrates flow over elapsed time into the current hour's
+// bucket, rolls over at midnight, and persists to flash periodically.
+static void updateWaterUsage(float t_internal, float flow) {
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo, 5)) return;   // no synced clock yet
+
+    int day  = timeinfo.tm_yday;
+    int hour = timeinfo.tm_hour;
+
+    if (g_usage_day == -1) {
+        // First call after boot: resume today's saved progress, if any.
+        int   saved_day = -1;
+        float liters[USAGE_HOURS], temps[USAGE_HOURS];
+        if (DataManager::loadWaterUsage(saved_day, liters, temps, USAGE_HOURS) && saved_day == day) {
+            memcpy(g_hourly_liters, liters, sizeof(g_hourly_liters));
+            memcpy(g_hourly_temp,   temps,  sizeof(g_hourly_temp));
+        }
+        g_usage_day     = day;
+        g_last_usage_ms = millis();
+        return;
+    }
+
+    if (day != g_usage_day) {
+        // Midnight rollover: start today fresh.
+        memset(g_hourly_liters, 0, sizeof(g_hourly_liters));
+        memset(g_hourly_temp,   0, sizeof(g_hourly_temp));
+        g_usage_day = day;
+    }
+
+    unsigned long now = millis();
+    float dt_min = (now - g_last_usage_ms) / 60000.0f;
+    g_last_usage_ms = now;
+    if (dt_min > 0.0f && dt_min < 5.0f) {   // ignore absurd gaps (reboot, clock jump)
+        g_hourly_liters[hour] += flow * dt_min;
+    }
+    g_hourly_temp[hour] = t_internal;
+
+    if (now - g_last_usage_save_ms > 300000UL) {   // persist every 5 minutes
+        g_last_usage_save_ms = now;
+        DataManager::saveWaterUsage(g_usage_day, g_hourly_liters, g_hourly_temp, USAGE_HOURS);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -896,13 +1106,13 @@ static void build_home_page(lv_obj_t* scr) {
     lv_obj_t* right_col = lv_obj_create(mid_row);
     disableScroll(right_col);
     lv_obj_set_flex_grow(right_col, 1);
-    lv_obj_set_height(right_col, 230);
+    lv_obj_set_height(right_col, 236);
     lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(right_col, 0, 0);
     lv_obj_set_style_pad_all(right_col, 0, 0);
     lv_obj_set_flex_flow(right_col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(right_col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_row(right_col, 14, 0);
+    lv_obj_set_style_pad_row(right_col, 8, 0);
 
     btn_power = lv_btn_create(right_col);
     disableScroll(btn_power);
@@ -921,7 +1131,7 @@ static void build_home_page(lv_obj_t* scr) {
 
     lv_obj_t* shower_card = lv_obj_create(right_col);
     disableScroll(shower_card);
-    lv_obj_set_size(shower_card, lv_pct(100), 84);
+    lv_obj_set_size(shower_card, lv_pct(100), 78);
     lv_obj_set_style_radius(shower_card, 20, 0);
     lv_obj_set_style_bg_color(shower_card, lv_color_white(), 0);
     lv_obj_set_style_border_width(shower_card, 2, 0);
@@ -959,6 +1169,8 @@ static void build_home_page(lv_obj_t* scr) {
               lv_color_hex(0xE8F5E9), lv_color_hex(0xC8E6C9), lv_color_hex(0x1B5E20), goto_network_cb);
     make_tile(tile_row, LV_SYMBOL_BARS, "Stats",
               lv_color_hex(0xFFF3E0), lv_color_hex(0xFFE0B2), lv_color_hex(0xBF360C), goto_stats_cb);
+    make_tile(tile_row, LV_SYMBOL_IMAGE, "Solar",
+              lv_color_hex(0xFFF8E1), lv_color_hex(0xFFECB3), lv_color_hex(0xF57F17), goto_solar_cb);
 
     lv_obj_add_event_cb(page_home, screen_touched_cb, LV_EVENT_PRESSED, NULL);
 }
@@ -1032,7 +1244,7 @@ static void build_settings_page(lv_obj_t* scr) {
     lv_obj_set_style_text_color(lbl_target_temp, CLR_ACCENT, 0);
 
     lv_obj_t* lbl_range = lv_label_create(target_col);
-    lv_label_set_text(lbl_range, "range 30" "\xe2\x80\x93" "80" "\xc2\xb0");
+    lv_label_set_text(lbl_range, "range 30-80" "\xc2\xb0");
     lv_obj_set_style_text_font(lbl_range, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_range, CLR_SUBTEXT, 0);
 
@@ -1561,6 +1773,9 @@ static void build_stats_page(lv_obj_t* scr) {
     lv_obj_set_style_pad_column(row1, 12, 0);
 
     lbl_system_mode = make_stat_card(row1, "System Mode", CLR_ACCENT);
+    lv_obj_set_style_text_font(lbl_system_mode, &lv_font_montserrat_20, 0);
+    lv_obj_set_width(lbl_system_mode, 150);
+    lv_label_set_long_mode(lbl_system_mode, LV_LABEL_LONG_DOT);
     lbl_stat_power  = make_stat_card(row1, "Power now", lv_palette_main(LV_PALETTE_ORANGE));
     lbl_stat_flow   = make_stat_card(row1, "Flow now", CLR_ACCENT);
     lbl_stat_plc    = make_stat_card(row1, "PLC Link", lv_palette_main(LV_PALETTE_RED));
@@ -1575,26 +1790,106 @@ static void build_stats_page(lv_obj_t* scr) {
     lv_obj_set_style_radius(progress_card, 18, 0);
     lv_obj_set_style_pad_all(progress_card, 18, 0);
 
-    lv_obj_t* progress_title = lv_label_create(progress_card);
-    lv_label_set_text(progress_title, "Tank temperature vs. target");
-    lv_obj_set_style_text_font(progress_title, &lv_font_montserrat_18, 0);
-    lv_obj_align(progress_title, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_t* usage_title = lv_label_create(progress_card);
+    lv_label_set_text(usage_title, "Water Usage - last 24h");
+    lv_obj_set_style_text_font(usage_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(usage_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
-    bar_temp_progress = lv_bar_create(progress_card);
-    lv_obj_set_size(bar_temp_progress, lv_pct(100), 28);
-    lv_obj_align(bar_temp_progress, LV_ALIGN_TOP_LEFT, 0, 50);
-    lv_bar_set_range(bar_temp_progress, 0, 100);
-    lv_bar_set_value(bar_temp_progress, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(bar_temp_progress, CLR_BORDER, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(bar_temp_progress, CLR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(bar_temp_progress, 14, LV_PART_MAIN);
-    lv_obj_set_style_radius(bar_temp_progress, 14, LV_PART_INDICATOR);
+    lbl_usage_today = lv_label_create(progress_card);
+    lv_label_set_text(lbl_usage_today, "Today: -- L");
+    lv_obj_set_style_text_font(lbl_usage_today, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_usage_today, CLR_SUBTEXT, 0);
+    lv_obj_align(lbl_usage_today, LV_ALIGN_TOP_RIGHT, 0, 0);
 
-    lbl_temp_progress_text = lv_label_create(progress_card);
-    lv_label_set_text(lbl_temp_progress_text, "-- / -- " "\xc2\xb0" "C");
-    lv_obj_set_style_text_font(lbl_temp_progress_text, &lv_font_montserrat_22, 0);
-    lv_obj_set_style_text_color(lbl_temp_progress_text, CLR_TEXT, 0);
-    lv_obj_align(lbl_temp_progress_text, LV_ALIGN_TOP_LEFT, 0, 96);
+    // Bar color encodes that hour's tank temperature (pale blue = cool,
+    // deep red = hot) via usage_chart_draw_event_cb; bar height is liters.
+    // LVGL draws axis tick labels *outside* the chart's own box (to the
+    // left of it for Y, below it for X) rather than shrinking the plot
+    // area to fit them, so the chart itself is sized smaller than the
+    // card and offset, leaving blank margin on the left/bottom for them
+    // to render into instead of being clipped by the card's edge.
+    chart_usage = lv_chart_create(progress_card);
+    lv_obj_set_pos(chart_usage, 44, 32);
+    lv_obj_set_size(chart_usage, 678, 126);
+    lv_obj_set_style_bg_opa(chart_usage, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(chart_usage, 0, LV_PART_MAIN);
+    lv_obj_set_style_text_font(chart_usage, &lv_font_montserrat_14, LV_PART_TICKS);
+    lv_obj_set_style_text_color(chart_usage, CLR_SUBTEXT, LV_PART_TICKS);
+    lv_obj_set_style_pad_left(chart_usage, 4, LV_PART_TICKS);
+    lv_obj_set_style_pad_bottom(chart_usage, 4, LV_PART_TICKS);
+    lv_chart_set_type(chart_usage, LV_CHART_TYPE_BAR);
+    lv_chart_set_point_count(chart_usage, USAGE_HOURS);
+    lv_chart_set_range(chart_usage, LV_CHART_AXIS_PRIMARY_Y, 0, 60);
+    lv_chart_set_div_line_count(chart_usage, 4, 5);   // vdiv=1 divides by zero in LVGL's div-line draw code
+    lv_chart_set_axis_tick(chart_usage, LV_CHART_AXIS_PRIMARY_Y, 6, 3, 4, 1, true, 34);   // 0/20/40/60 L
+    lv_chart_set_axis_tick(chart_usage, LV_CHART_AXIS_PRIMARY_X, 6, 3, 5, 1, true, 26);   // 00/06/12/18/24
+    ser_usage = lv_chart_add_series(chart_usage, CLR_ACCENT, LV_CHART_AXIS_PRIMARY_Y);
+    for (int i = 0; i < USAGE_HOURS; i++) lv_chart_set_value_by_id(chart_usage, ser_usage, i, 0);
+    lv_obj_add_event_cb(chart_usage, usage_chart_draw_event_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+    lv_obj_add_event_cb(chart_usage, hourly_chart_x_tick_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
+}
+
+static void build_solar_page(lv_obj_t* scr) {
+    page_solar = lv_obj_create(scr);
+    disableScroll(page_solar);
+    lv_obj_set_size(page_solar, 800, 480);
+    lv_obj_set_pos(page_solar, 0, 0);
+    lv_obj_set_style_bg_color(page_solar, CLR_BG, 0);
+    lv_obj_set_style_border_width(page_solar, 0, 0);
+    lv_obj_set_style_radius(page_solar, 0, 0);
+    lv_obj_set_style_pad_all(page_solar, 0, 0);
+    lv_obj_add_flag(page_solar, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* header = make_header(page_solar, CLR_TOPBAR);
+    make_back_btn(header, page_home);
+    make_header_title(header, LV_SYMBOL_IMAGE "  Solar Forecast");
+
+    lv_obj_t* card = lv_obj_create(page_solar);
+    disableScroll(card);
+    lv_obj_set_size(card, 768, 380);
+    lv_obj_set_pos(card, 16, 80);
+    lv_obj_set_style_bg_color(card, lv_color_white(), 0);
+    lv_obj_set_style_border_width(card, 2, 0);
+    lv_obj_set_style_border_color(card, CLR_BORDER, 0);
+    lv_obj_set_style_radius(card, 18, 0);
+    lv_obj_set_style_pad_all(card, 18, 0);
+
+    lv_obj_t* title = lv_label_create(card);
+    lv_label_set_text(title, "Solar Irradiance - today (W/m2)");
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_18, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lbl_solar_peak = lv_label_create(card);
+    lv_label_set_text(lbl_solar_peak, "Peak: -- W/m2");
+    lv_obj_set_style_text_font(lbl_solar_peak, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_solar_peak, CLR_SUBTEXT, 0);
+    lv_obj_align(lbl_solar_peak, LV_ALIGN_TOP_RIGHT, 0, 0);
+
+    // Global horizontal irradiance (shortwave_radiation) as a smooth curve —
+    // it rises/falls continuously through the day, so a line reads more
+    // naturally here than the discrete-event bars used for water usage.
+    // See the comment above chart_usage: axis labels draw outside the
+    // chart's own box, so it's sized smaller than the card and offset to
+    // leave blank margin for them instead of being clipped by the card edge.
+    chart_solar = lv_chart_create(card);
+    lv_obj_set_pos(chart_solar, 50, 34);
+    lv_obj_set_size(chart_solar, 670, 284);
+    lv_obj_set_style_bg_opa(chart_solar, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_border_width(chart_solar, 0, LV_PART_MAIN);
+    lv_obj_set_style_size(chart_solar, 0, LV_PART_INDICATOR);   // hide point markers
+    lv_obj_set_style_text_font(chart_solar, &lv_font_montserrat_14, LV_PART_TICKS);
+    lv_obj_set_style_text_color(chart_solar, CLR_SUBTEXT, LV_PART_TICKS);
+    lv_obj_set_style_pad_left(chart_solar, 4, LV_PART_TICKS);
+    lv_obj_set_style_pad_bottom(chart_solar, 4, LV_PART_TICKS);
+    lv_chart_set_type(chart_solar, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(chart_solar, SOLAR_HOURS);
+    lv_chart_set_range(chart_solar, LV_CHART_AXIS_PRIMARY_Y, 0, 1000);
+    lv_chart_set_div_line_count(chart_solar, 4, 6);
+    lv_chart_set_axis_tick(chart_solar, LV_CHART_AXIS_PRIMARY_Y, 6, 3, 5, 1, true, 44);   // 0/250/500/750/1000 W/m2
+    lv_chart_set_axis_tick(chart_solar, LV_CHART_AXIS_PRIMARY_X, 6, 3, 5, 1, true, 26);   // 00/06/12/18/24
+    ser_solar = lv_chart_add_series(chart_solar, lv_color_hex(0xF57F17), LV_CHART_AXIS_PRIMARY_Y);
+    for (int i = 0; i < SOLAR_HOURS; i++) lv_chart_set_value_by_id(chart_solar, ser_solar, i, 0);
+    lv_obj_add_event_cb(chart_solar, hourly_chart_x_tick_cb, LV_EVENT_DRAW_PART_BEGIN, NULL);
 }
 
 static void build_diagnostics_page(lv_obj_t* scr) {
@@ -1673,6 +1968,7 @@ void UI_Init() {
     build_password_page(scr);
     build_stats_page(scr);
     build_diagnostics_page(scr);
+    build_solar_page(scr);
 
     createScreensaver(scr);
     show_page(page_home);
@@ -1780,10 +2076,21 @@ void UI_UpdatePLCStatus(bool connected) {
     }
 }
 
+// Maps the internal state constants (used for logging) to short display
+// text that fits the Stats page's System Mode card.
+static const char* prettySystemModeLabel(const char* mode) {
+    if (strcmp(mode, "SAFETY_OVERRIDE")     == 0) return "Safety";
+    if (strcmp(mode, "STATE_OFF")           == 0) return "Off";
+    if (strcmp(mode, "STATE_SHOWER_BOOST")  == 0) return "Shower";
+    if (strcmp(mode, "STATE_HEATING_TANK")  == 0) return "Heating";
+    if (strcmp(mode, "STATE_STANDBY")       == 0) return "Standby";
+    return mode;
+}
+
 void UI_UpdateSystemMode(const char* mode) {
     if (lvgl_port_lock(UI_REFRESH_RATE)) {
         if (lbl_system_mode != NULL && mode != NULL)
-            lv_label_set_text(lbl_system_mode, mode);
+            lv_label_set_text(lbl_system_mode, prettySystemModeLabel(mode));
         lvgl_port_unlock();
     }
 }
@@ -1856,17 +2163,8 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
             snprintf(buf, sizeof(buf), "%.1f L/min", flow);
             lv_label_set_text(lbl_stat_flow, buf);
         }
-        if (bar_temp_progress != NULL && target_temperature > 0) {
-            int pct = (int)(t_internal * 100.0f / (float)target_temperature);
-            if (pct < 0) pct = 0;
-            if (pct > 100) pct = 100;
-            lv_bar_set_value(bar_temp_progress, pct, LV_ANIM_ON);
-        }
-        if (lbl_temp_progress_text != NULL) {
-            char buf[24];
-            snprintf(buf, sizeof(buf), "%.0f / %d \xc2\xb0""C", t_internal, target_temperature);
-            lv_label_set_text(lbl_temp_progress_text, buf);
-        }
+        updateWaterUsage(t_internal, flow);
+        refreshUsageChart();
 
         // Diagnostics page
         if (lbl_diag_tint != NULL) {

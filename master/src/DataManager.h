@@ -27,6 +27,10 @@ public:
     static bool logSensorData(float temp, float humidity, float pressure);
     static bool getLastSensorData(float& temp, float& humidity, float& pressure);
     static void clearOldLogs();
+
+    // Water usage tracking (Stats page): 24 hourly buckets for one day
+    static bool saveWaterUsage(int dayOfYear, const float* hourlyLiters, const float* hourlyTemps, int hours);
+    static bool loadWaterUsage(int& dayOfYear, float* hourlyLiters, float* hourlyTemps, int hours);
     
     // Utility
     static void printStorageInfo();

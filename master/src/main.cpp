@@ -249,8 +249,19 @@ void loop() {
         }
     }
     
-    // Check screensaver
-    checkScreensaver();
+    // Fetch solar forecast: once per day (on first connection, then again
+    // after local midnight). Needs a synced clock to know the local day.
+    static int solar_fetch_day = -1;
+    if (wifi_connected && time_synced) {
+        struct tm timeinfo;
+        if (getLocalTime(&timeinfo, 100) && timeinfo.tm_yday != solar_fetch_day) {
+            solar_fetch_day = timeinfo.tm_yday;
+            fetchSolarForecast();
+        }
+    }
+
+    // Screensaver disabled per user request
+    // checkScreensaver();
     
     vTaskDelay(1000);
 }
