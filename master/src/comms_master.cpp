@@ -101,7 +101,8 @@ static void sendCommand() {
         inputs.flowRateLPM  = demo_flow;
         inputs.uiStateOn    = demo_ui_on;
         inputs.plcConnected = !demo_stop_comms;  // false during scenario 6
-        UI_UpdateSensorData(demo_temp, demo_temp, demo_flow, 0.0f);
+        // Use last_power_w from slave STATUS so mock 3kW load shows on Stats page
+        UI_UpdateSensorData(demo_temp, demo_temp, demo_flow, last_power_w);
     } else {
         inputs.currentTemp  = last_t_internal;
         inputs.flowRateLPM  = last_flow;
