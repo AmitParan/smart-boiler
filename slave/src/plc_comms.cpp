@@ -102,10 +102,13 @@ void PLC_SendStatus() {
         delay(2);
     }
 
-    Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
-                  pkt.sequence,
-                  local_temps[0], local_temps[1], local_temps[2],
-                  local_flow, (float)pkt.powerWatts, pkt.statusByte);
+    // Suppress noisy PLC log in demo mode — slave serial shows only SSR events
+    if (currentMode != MODE_DEMO) {
+        Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
+                      pkt.sequence,
+                      local_temps[0], local_temps[1], local_temps[2],
+                      local_flow, (float)pkt.powerWatts, pkt.statusByte);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -246,11 +249,13 @@ bool PLC_ReceivePacket() {
                                 }
                             }
 
-                            Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",
-                                          cmd->sequence,
-                                          cmd->pwmInternal,
-                                          cmd->pwmBoost,
-                                          cmd->cmdFlags);
+                            if (currentMode != MODE_DEMO) {
+                                Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",
+                                              cmd->sequence,
+                                              cmd->pwmInternal,
+                                              cmd->pwmBoost,
+                                              cmd->cmdFlags);
+                            }
 
                             rx_state   = RX_WAIT_START;
                             rx_buf_idx = 0u;

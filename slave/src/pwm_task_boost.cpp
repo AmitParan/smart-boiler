@@ -44,11 +44,13 @@ void TaskPWM_Boost(void* pvParameters) {
 
         if (on_ms > 0) {
             ledcWrite(PIN_SSR_EXT, 127);
+            if (!boost_ssr_on) Serial.println("[SSR] EXT -> ON");
             boost_ssr_on = true;
             vTaskDelay(pdMS_TO_TICKS(on_ms));
         }
         if (off_ms > 0) {
             ledcWrite(PIN_SSR_EXT, 0);
+            if (boost_ssr_on) Serial.println("[SSR] EXT -> OFF");
             boost_ssr_on = false;
             vTaskDelay(pdMS_TO_TICKS(off_ms));
         }

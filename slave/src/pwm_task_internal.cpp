@@ -33,11 +33,13 @@ void TaskPWM_Internal(void* pvParameters) {
 
         if (on_ms > 0) {
             ledcWrite(PIN_SSR_INT, 127);
+            if (!internal_ssr_on) Serial.println("[SSR] INT -> ON");
             internal_ssr_on = true;
             vTaskDelay(pdMS_TO_TICKS(on_ms));
         }
         if (off_ms > 0) {
             ledcWrite(PIN_SSR_INT, 0);
+            if (internal_ssr_on) Serial.println("[SSR] INT -> OFF");
             internal_ssr_on = false;
             vTaskDelay(pdMS_TO_TICKS(off_ms));
         }

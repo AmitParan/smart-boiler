@@ -413,6 +413,11 @@ static void updateTargetLabels() {
 
 static void power_btn_event_cb(lv_event_t* e) {
     last_touch_time = millis();
+    // Power button is locked during demo mode — only mode switching is allowed
+    if (appMode == APP_MODE_DEMO) {
+        Serial.println("[UI] Power button locked in DEMO mode");
+        return;
+    }
     boiler_state = !boiler_state;
     if (btn_power        != NULL) lv_obj_set_style_bg_color(btn_power, boiler_state ? CLR_ON : CLR_OFF, 0);
     if (lbl_power_status != NULL) lv_label_set_text(lbl_power_status, boiler_state ? "ON" : "OFF");
