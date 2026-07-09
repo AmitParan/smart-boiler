@@ -279,6 +279,12 @@ void TaskMasterComms(void* pvParameters) {
                 if (appMode != APP_MODE_DEMO) {
                     UI_UpdatePLCStatus(false);
                 }
+            } else {
+                // STATUS received: reset the 1s CMD timer so the next CMD waits a
+                // full second. Without this, the next CMD fires ~10ms after STATUS,
+                // which is too fast for the slave's KQ-330 carrier to settle, causing
+                // the slave to miss the CMD (slave still in TX-settling mode).
+                last_cmd_ms = millis();
             }
         }
 
