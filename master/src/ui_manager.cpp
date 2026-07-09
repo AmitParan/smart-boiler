@@ -414,7 +414,7 @@ static void updateTargetLabels() {
 static void power_btn_event_cb(lv_event_t* e) {
     last_touch_time = millis();
     // Power button is locked during demo mode — only mode switching is allowed
-    if (appMode == APP_MODE_DEMO) {
+    if (appMode == MODE_DEMO) {
         Serial.println("[UI] Power button locked in DEMO mode");
         return;
     }
@@ -1184,16 +1184,16 @@ static void build_home_page(lv_obj_t* scr) {
 
 static void mode_toggle_cb(lv_event_t*) {
     last_touch_time = millis();
-    appMode = (appMode == APP_MODE_DEMO) ? APP_MODE_REALTIME : APP_MODE_DEMO;
+    appMode = (appMode == MODE_DEMO) ? MODE_REALTIME : MODE_DEMO;
     // Clear all demo control flags when switching modes
     demo_stop_comms  = false;
     demo_fault_sim   = false;
     demo_solar_active = false;
     lv_label_set_text(lbl_app_mode,
-                      appMode == APP_MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
+                      appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
                                                : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
     Serial.printf("[UI] Mode switched to: %s\n",
-                  appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
+                  appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 }
 
 static void build_settings_page(lv_obj_t* scr) {
@@ -1342,7 +1342,7 @@ static void build_settings_page(lv_obj_t* scr) {
     lv_obj_t* lbl_mode_name = lv_label_create(mode_row);
     lbl_app_mode = lbl_mode_name;
     lv_label_set_text(lbl_mode_name,
-                      appMode == APP_MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
+                      appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
                                                : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
     lv_obj_set_style_text_font(lbl_mode_name, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(lbl_mode_name, CLR_TEXT, 0);
@@ -2247,3 +2247,4 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
         lvgl_port_unlock();
     }
 }
+

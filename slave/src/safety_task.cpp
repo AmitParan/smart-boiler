@@ -10,17 +10,16 @@
 void TaskSafety(void* pvParameters) {
     Serial.println("[SAFETY] Task started");
 
-    static uint32_t fault_latch_ms        = 0u;
-    // Once-flags: each event logs exactly once per fault event, resets on auto-clear
-    static bool overheat_logged           = false;
-    static bool hw_interlock_logged       = false;
-    static bool plc_timeout_logged        = false;
-    static bool uncommanded_curr_logged   = false;
+    static uint32_t fault_latch_ms      = 0u;
+    static bool overheat_logged         = false;
+    static bool hw_interlock_logged     = false;
+    static bool plc_timeout_logged      = false;
+    static bool uncommanded_curr_logged = false;
 
     for (;;) {
         bool fault = false;
 
-        // ---- Snapshot shared data under mutexes ----
+        // ---- Snapshot shared data ----
         float local_temps[3] = {0.0f, 0.0f, 0.0f};
         float local_flow     = 0.0f;
         float local_current  = 0.0f;
@@ -43,9 +42,7 @@ void TaskSafety(void* pvParameters) {
             xSemaphoreGive(mutex_cmd);
         }
 
-        // -------------------------------------------------------------------
-        //  1. Temperature overheat  (always active)
-        // -------------------------------------------------------------------
+        // 1. Overheat (always active, both modes)
         for (int i = 0; i < 3; i++) {
             if (local_temps[i] > 80.0f) {
                 fault = true;
@@ -65,46 +62,43 @@ void TaskSafety(void* pvParameters) {
             }
         }
 
-        // -------------------------------------------------------------------
-        //  2 & 3 & 4. Interlocks (DEMO + PRODUCTION; bypassed in BENCH_TEST)
-        // -------------------------------------------------------------------
-        if (currentMode != MODE_BENCH_TEST) {
-
-            // 2. Boost flow interlock
-            bool boost_commanded = (local_flags & CMD_BOOST_ENABLE) && (local_pwm_bst > 0u);
-            if (boost_commanded && local_flow < 1.0f) {
-                if (currentMode != MODE_DEMO)
-                    Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
-                fault = true;
+        // 2. Boost flow interlock (both modes; in DEMO, flow is mock-injected correctly)
+        bool boost_commanded = (local_flags & CMD_BOOST_ENABLE) && (local_pwm_bst > 0u);
+        if (boost_commanded && local_flow < 1.0f) {
+            fault = true;
+            if (currentMode == MODE_DEMO) {
+                /* silent — not a demo scenario fault */
+            } else {
+                Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
             }
+        }
 
-            // 3. Uncommanded current (SSR short / stuck triac)
-            bool any_commanded = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
-            if (!any_commanded && local_current > 0.5f) {
-                fault = true;
-                if (currentMode == MODE_DEMO) {
-                    if (!uncommanded_curr_logged) {
-                        Serial.println("[SLAVE] !!! CRITICAL FAULT: UNCOMMANDED CURRENT DETECTED IN 50ms LOOP! SSR SHORT CIRCUIT !!!");
-                        uncommanded_curr_logged = true;
-                    }
-                } else {
-                    Serial.println("[SAFETY] FAULT: Uncommanded current detected - possible SSR fault!");
-                }
-            }
-
-            // 4. PLC watchdog
-            if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
-                fault = true;
-                if (!plc_timeout_logged) {
-                    if (currentMode == MODE_DEMO)
-                        Serial.println("[SLAVE] \xe2\x9a\xa0\xef\xb8\x8f NO CMD RECEIVED FOR 5s! TaskSafety TRIGGERED HARD-CUTOFF!");
-                    else
-                        Serial.println("[SAFETY] FAULT: PLC timeout - no CMD for >5s");
-                    plc_timeout_logged = true;
+        // 3. Uncommanded current — SSR short/stuck triac (both modes)
+        bool any_commanded = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
+        if (!any_commanded && local_current > 0.5f) {
+            fault = true;
+            if (currentMode == MODE_DEMO) {
+                if (!uncommanded_curr_logged) {
+                    Serial.println("[SLAVE] !!! CRITICAL FAULT: UNCOMMANDED CURRENT DETECTED IN 50ms LOOP! SSR SHORT CIRCUIT !!!");
+                    uncommanded_curr_logged = true;
                 }
             } else {
-                plc_timeout_logged = false;
+                Serial.println("[SAFETY] FAULT: Uncommanded current - possible SSR fault!");
             }
+        }
+
+        // 4. PLC watchdog (both modes; S6 specifically tests this in DEMO)
+        if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
+            fault = true;
+            if (!plc_timeout_logged) {
+                if (currentMode == MODE_DEMO)
+                    Serial.println("[SLAVE] \xe2\x9a\xa0\xef\xb8\x8f NO CMD RECEIVED FOR 5s! TaskSafety TRIGGERED HARD-CUTOFF!");
+                else
+                    Serial.println("[SAFETY] FAULT: PLC timeout - no CMD for >5s");
+                plc_timeout_logged = true;
+            }
+        } else {
+            plc_timeout_logged = false;
         }
 
         if (fault) {
@@ -116,12 +110,12 @@ void TaskSafety(void* pvParameters) {
             }
         }
 
-        // Demo-mode auto-clear (2s) — permanent latch in production
+        // DEMO: auto-clear faults after 2s so test cycle continues
+        // REALTIME: permanent latch, requires hardware reboot
         if (system_fault && currentMode == MODE_DEMO) {
             if (millis() - fault_latch_ms > 2000UL) {
                 system_fault          = false;
                 fault_latch_ms        = 0u;
-                // Reset all once-flags so they fire again in next scenario
                 overheat_logged         = false;
                 hw_interlock_logged     = false;
                 plc_timeout_logged      = false;

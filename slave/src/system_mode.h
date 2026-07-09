@@ -1,29 +1,27 @@
-﻿#ifndef SYSTEM_MODE_H
+#ifndef SYSTEM_MODE_H
 #define SYSTEM_MODE_H
 
 #include <Arduino.h>
 
 // ---------------------------------------------------------------------------
-//  SystemMode - runtime execution mode
+//  SystemMode - matches master AppMode exactly (same names, same values)
 //
-//  MODE_BENCH_TEST : Legacy bench mode. Physical sensors bypassed, safety
-//                   interlocks (flow, uncommanded current) disabled. Use only
-//                   for initial bring-up without any hardware attached.
+//  MODE_DEMO     : Slave uses mock sensor data driven by master CMD flags.
+//                  Overheat + flow interlock + uncommanded-current checks
+//                  all ACTIVE (mock data is correct for each scenario).
+//                  Safety faults auto-clear after 2s so the test cycle
+//                  continues without a hardware reboot.
 //
-//  MODE_DEMO       : Automated demo / test bench. Sensor values are injected
-//                   by the Master via demoTempX10/demoFlowX10 CMD fields.
-//                   All safety interlocks remain ACTIVE (use mock data).
-//                   Set automatically by CMD_DEMO_ACTIVE flag in every CMD.
+//  MODE_REALTIME : Slave reads real DS18B20 / YF-B6 / ACS758 sensors.
+//                  All safety interlocks permanently active.
 //
-//  MODE_PRODUCTION : Full hardware present. Real sensors, all interlocks.
-//
-//  Default at boot: MODE_BENCH_TEST (safe without any hardware attached).
-//  Switch via serial: 'b'=BENCH_TEST  'd'=DEMO  'p'=PRODUCTION  '?'=status
+//  Default at boot: MODE_DEMO (safe without physical sensors attached).
+//  Auto-switch: CMD_DEMO_ACTIVE flag in every CMD propagates the master mode.
+//  Serial override: 'd' = DEMO,  'r' = REALTIME,  '?' = status
 // ---------------------------------------------------------------------------
 enum SystemMode : uint8_t {
-    MODE_BENCH_TEST = 0,
-    MODE_DEMO       = 1,
-    MODE_PRODUCTION = 2,
+    MODE_DEMO     = 0,
+    MODE_REALTIME = 1,
 };
 
 extern volatile SystemMode currentMode;
@@ -31,3 +29,4 @@ extern volatile SystemMode currentMode;
 void TaskSerial(void* pvParameters);
 
 #endif // SYSTEM_MODE_H
+

@@ -64,3 +64,4 @@ extern SemaphoreHandle_t mutex_cmd;      ///< guards cmd_pwm_internal/boost/flag
 extern portMUX_TYPE      timerMux;       ///< ISR-safe spinlock for flow pulse counter
 
 #endif // SHARED_DATA_H
+

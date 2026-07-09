@@ -250,15 +250,15 @@ bool PLC_ReceivePacket() {
                                 slave_demo_fault_sim   = (cmd->cmdFlags & CMD_DEMO_FAULT_SIM) != 0;
                                 if (currentMode != MODE_DEMO) {
                                     currentMode = MODE_DEMO;
-                                    Serial.println("[PLC] Mode set to DEMO by master");
+                                    Serial.println("[MODE] -> DEMO (master activated)");
                                 }
                             } else {
                                 slave_demo_flow_active = false;
                                 slave_demo_overtemp    = false;
                                 slave_demo_fault_sim   = false;
                                 if (currentMode == MODE_DEMO) {
-                                    currentMode = MODE_PRODUCTION;
-                                    Serial.println("[PLC] Mode restored to PRODUCTION");
+                                    currentMode = MODE_REALTIME;
+                                    Serial.println("[MODE] -> REALTIME (master deactivated demo)");
                                 }
                             }
 
@@ -300,3 +300,4 @@ bool PLC_ReceivePacket() {
 
     return false;
 }
+

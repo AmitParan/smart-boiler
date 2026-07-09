@@ -72,7 +72,7 @@ static void processStatusPacket(const uint8_t* raw) {
     last_power_w    = power_w;
 
     // Demo mode: event-driven slave fault banner (logged ONCE per fault event)
-    if (appMode == APP_MODE_DEMO) {
+    if (appMode == MODE_DEMO) {
         static bool slave_fault_banner_shown = false;
         if ((pkt->statusByte & STATUS_FAULT) && !slave_fault_banner_shown) {
             Serial.println("[MASTER] \xe2\x9d\x8c RECEIVED STATUS_FAULT (0x08) FROM SLAVE! SYSTEM LOCKED.");
@@ -90,7 +90,7 @@ static void processStatusPacket(const uint8_t* raw) {
 
     // In REALTIME mode the UI shows actual sensor data from the slave.
     // In DEMO mode the UI is updated by sendCommand() using demo values instead.
-    if (appMode == APP_MODE_REALTIME) {
+    if (appMode == MODE_REALTIME) {
         UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
     }
     UI_UpdatePLCStatus(true);
@@ -101,19 +101,19 @@ static void processStatusPacket(const uint8_t* raw) {
 //  Builds a BoilerCmdPacket_t using SystemManager and transmits it.
 //  Called once per second from TaskMasterComms.
 //
-//  APP_MODE_DEMO     — SystemInputs from demo vars (set by TaskAutomatedTestBench).
+//  MODE_DEMO     — SystemInputs from demo vars (set by TaskAutomatedTestBench).
 //                      CMD_DEMO_ACTIVE flag is set; demoTempX10/demoFlowX10 are packed
 //                      so the slave can mirror them as mock sensor values.
 //                      If demo_stop_comms (scenario 6), processes SystemManager for UI
 //                      but suppresses TX so the slave detects a PLC timeout.
-//  APP_MODE_REALTIME — inputs from last STATUS packet; no demo fields in CMD.
+//  MODE_REALTIME — inputs from last STATUS packet; no demo fields in CMD.
 // ---------------------------------------------------------------------------
 static void sendCommand() {
     // Build SystemInputs based on mode
     SystemInputs inputs;
     inputs.targetShowerTemp = (float)target_temperature;
 
-    if (appMode == APP_MODE_DEMO) {
+    if (appMode == MODE_DEMO) {
         inputs.currentTemp  = demo_temp;
         inputs.flowRateLPM  = demo_flow;
         inputs.uiStateOn    = demo_ui_on;
@@ -141,7 +141,7 @@ static void sendCommand() {
 
     // Scenario 6: suppress TX so slave triggers PLC-loss watchdog
     // Only applies in DEMO mode — never suppress TX in REALTIME
-    if (appMode == APP_MODE_DEMO && demo_stop_comms) {
+    if (appMode == MODE_DEMO && demo_stop_comms) {
         tx_seq++;
         Serial.printf("[DEMO] TX suppressed | [%s]\n", cmd.stateLabel);
         return;
@@ -158,7 +158,7 @@ static void sendCommand() {
     pkt.cmdFlags    = (cmd.pwmInternal > 0) ? CMD_HEATER_ENABLE : 0u;
     pkt.cmdFlags   |= (cmd.pwmBoost    > 0) ? CMD_BOOST_ENABLE  : 0u;
 
-    if (appMode == APP_MODE_DEMO) {
+    if (appMode == MODE_DEMO) {
         pkt.cmdFlags    |= CMD_DEMO_ACTIVE;
         if (demo_fault_sim)       pkt.cmdFlags |= CMD_DEMO_FAULT_SIM;
         if (demo_flow > 0.5f)     pkt.cmdFlags |= CMD_DEMO_FLOW;      // slave injects 6.5 L/min
@@ -185,7 +185,7 @@ static void sendCommand() {
     // ---------------------------------------------------------------------------
     //  Serial logging
     // ---------------------------------------------------------------------------
-    if (appMode == APP_MODE_DEMO) {
+    if (appMode == MODE_DEMO) {
         // Event-driven: SAFETY_OVERRIDE from PLC loss (log ONCE)
         static bool plc_loss_banner_shown = false;
         if (cmd.state == BoilerState::SAFETY_OVERRIDE && demo_stop_comms && !plc_loss_banner_shown) {
@@ -335,7 +335,7 @@ void TaskMasterComms(void* pvParameters) {
     Serial.printf("[COMMS] Master comms task started (RX=GPIO%d TX=GPIO%d)\n",
                   MASTER_RX_PIN, MASTER_TX_PIN);
     Serial.printf("[COMMS] Mode: %s\n",
-                  appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
+                  appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 
     unsigned long last_cmd_ms = millis();
 
@@ -360,7 +360,7 @@ void TaskMasterComms(void* pvParameters) {
             if (!got_status) {
                 Serial.println("[COMMS] No STATUS received within 3s");
                 // In demo mode keep UI showing Connected — loss is intentional (scenario 6)
-                if (appMode != APP_MODE_DEMO) {
+                if (appMode != MODE_DEMO) {
                     UI_UpdatePLCStatus(false);
                 }
             } else {
@@ -375,3 +375,4 @@ void TaskMasterComms(void* pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(10));
     }
 }
+

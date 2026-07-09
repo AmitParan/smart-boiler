@@ -308,3 +308,4 @@ bool DataManager::deleteFile(const char* filename) {
     Serial.printf("Failed to delete: %s\n", filename);
     return false;
 }
+

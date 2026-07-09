@@ -254,3 +254,4 @@ public:
 };
 
 #endif // NETWORK_MANAGER_H
+

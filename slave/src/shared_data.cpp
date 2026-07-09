@@ -35,3 +35,4 @@ volatile bool     cmd_ever_received    = false;
 
 // Spinlock for flow pulse counter ISR
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+

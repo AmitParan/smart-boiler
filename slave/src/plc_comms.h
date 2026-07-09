@@ -20,3 +20,4 @@ bool PLC_ReceivePacket();   // returns true if a valid CMD packet was received
 bool PLC_IsReceiving();     // true if state machine is mid-packet (don't TX now)
 
 #endif // PLC_COMMS_H
+

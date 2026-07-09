@@ -172,3 +172,4 @@ bool lvgl_port_unlock(void);
 #ifdef __cplusplus
 }
 #endif
+

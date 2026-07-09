@@ -6,17 +6,17 @@
 // ---------------------------------------------------------------------------
 //  AppMode — runtime operation mode (toggled from the Settings screen)
 //
-//  APP_MODE_DEMO      : Master injects scripted sensor values into SystemManager.
+//  MODE_DEMO      : Master injects scripted sensor values into SystemManager.
 //                       PLC is still active — slave receives real CMD packets
 //                       and fires SSRs accordingly. Use this to demonstrate
 //                       system behaviour or run automated test scenarios.
 //
-//  APP_MODE_REALTIME  : Master uses actual sensor readings from slave STATUS
+//  MODE_REALTIME  : Master uses actual sensor readings from slave STATUS
 //                       packets. Normal production operation.
 // ---------------------------------------------------------------------------
 enum AppMode : uint8_t {
-    APP_MODE_DEMO     = 0,
-    APP_MODE_REALTIME = 1,
+    MODE_DEMO     = 0,   ///< Automated scenarios; mock sensor data injected by master
+    MODE_REALTIME = 1,   ///< Production; real sensors from slave STATUS packets
 };
 
 extern volatile AppMode appMode;
@@ -32,3 +32,4 @@ extern volatile bool  demo_stop_comms;  ///< when true TaskMasterComms suppresse
 extern volatile bool  demo_fault_sim;   ///< when true slave simulates stuck-SSR current (scenario 8)
 extern volatile bool  demo_solar_active; ///< when true scenario 5 solar sweep is running (changes log label)
 #endif // APP_MODE_H
+

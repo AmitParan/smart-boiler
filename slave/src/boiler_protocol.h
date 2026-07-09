@@ -124,3 +124,4 @@ static inline uint8_t proto_cmd_crc(const BoilerCmdPacket_t* p) {
 }
 
 #endif // BOILER_PROTOCOL_H
+

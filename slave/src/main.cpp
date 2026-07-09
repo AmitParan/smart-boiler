@@ -1,4 +1,4 @@
-﻿#include <Arduino.h>
+#include <Arduino.h>
 #include "config.h"
 #include "shared_data.h"
 #include "system_mode.h"
@@ -15,7 +15,7 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("=== SLAVE UNIT STARTED ===");
-    Serial.println("[MODE] Boot mode: BENCH_TEST | Will auto-switch to DEMO when master connects");
+    Serial.println("[MODE] Boot mode: DEMO | Auto-switches to REALTIME when master sends without CMD_DEMO_ACTIVE");
 
     // -----------------------------------------------------------------------
     //  Create FreeRTOS mutexes before any task starts.
@@ -27,15 +27,15 @@ void setup() {
     mutex_cmd     = xSemaphoreCreateMutex();
 
     if (!mutex_temps || !mutex_flow || !mutex_current || !mutex_cmd) {
-        Serial.println("[FATAL] Failed to create mutexes — halting.");
+        Serial.println("[FATAL] Failed to create mutexes � halting.");
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
     // -----------------------------------------------------------------------
-    //  FreeRTOS task layout — all pinned to Core 0 (ESP32-C6 is single-core)
+    //  FreeRTOS task layout � all pinned to Core 0 (ESP32-C6 is single-core)
     //
-    //  Priority 4 (highest) : Safety — hard-cuts SSRs, runs every 50 ms
-    //  Priority 3           : PWM tasks — time-proportional SSR burst control
+    //  Priority 4 (highest) : Safety � hard-cuts SSRs, runs every 50 ms
+    //  Priority 3           : PWM tasks � time-proportional SSR burst control
     //  Priority 2           : Sensor + PLC tasks
     //  Priority 1 (lowest)  : Serial console (mode switching)
     // -----------------------------------------------------------------------
@@ -53,7 +53,7 @@ void setup() {
     // PLC communication (periodic push + CMD receive)
     xTaskCreatePinnedToCore(TaskPLC,    "PLC",    4096, NULL, 2, NULL, 0);
 
-    // Serial console — mode switching ('b'/'p'/'?')
+    // Serial console � mode switching ('b'/'p'/'?')
     xTaskCreatePinnedToCore(TaskSerial, "Serial", 2048, NULL, 1, NULL, 0);
 }
 
@@ -61,3 +61,4 @@ void loop() {
     // All work is done in FreeRTOS tasks - loop does nothing
     vTaskDelay(pdMS_TO_TICKS(1000));
 }
+

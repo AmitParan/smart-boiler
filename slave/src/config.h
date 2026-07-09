@@ -48,3 +48,4 @@
 #define STATUS_SEND_INTERVAL_MS   1000u   // slave pushes STATUS once per second
 
 #endif // CONFIG_H
+

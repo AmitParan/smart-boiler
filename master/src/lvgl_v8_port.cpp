@@ -857,3 +857,4 @@ bool lvgl_port_deinit(void)
 
     return true;
 }
+

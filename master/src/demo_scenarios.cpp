@@ -1,4 +1,4 @@
-﻿#include "demo_scenarios.h"
+#include "demo_scenarios.h"
 #include "app_mode.h"
 #include <Arduino.h>
 
@@ -20,14 +20,14 @@ static void banner(const char* cat, const char* title, const char* expected) {
 }
 
 // Check mode and abort cycle if switched to REALTIME mid-cycle
-#define DEMO_CHECK() if (appMode != APP_MODE_DEMO) { demo_stop_comms = false; demo_fault_sim = false; demo_solar_active = false; continue; }
+#define DEMO_CHECK() if (appMode != MODE_DEMO) { demo_stop_comms = false; demo_fault_sim = false; demo_solar_active = false; continue; }
 
 void TaskAutomatedTestBench(void* pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(6000));
     Serial.println("[MASTER] Automated test bench started. Waiting for first CMD cycle...");
 
     for (;;) {
-        if (appMode != APP_MODE_DEMO) {
+        if (appMode != MODE_DEMO) {
             vTaskDelay(pdMS_TO_TICKS(1000));
             continue;
         }
@@ -73,7 +73,7 @@ void TaskAutomatedTestBench(void* pvParameters) {
                "Both SSRs FORCED to 0% throughout - boiler yields to solar prediction");
         demo_solar_active = true;
         for (int i = 0; i <= 20; i++) {
-            if (appMode != APP_MODE_DEMO) break;
+            if (appMode != MODE_DEMO) break;
             float t = 28.0f + (14.0f * (float)i / 20.0f);  // 28 -> 42 C
             demo_set(t, 0.0f, true, false, false);
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -98,7 +98,7 @@ void TaskAutomatedTestBench(void* pvParameters) {
                "Injection: TEMP sweep 75->87C (software cutoff @80C, HW interlock @86C)",
                "Slave FAULT @80C (software) + LM393N simulation @86C");
         for (int i = 0; i <= 20; i++) {
-            if (appMode != APP_MODE_DEMO) break;
+            if (appMode != MODE_DEMO) break;
             float t = 75.0f + ((float)i / 20.0f) * 12.0f;
             demo_set(t, 0.0f, true, false, false);
             vTaskDelay(pdMS_TO_TICKS(1000));
@@ -121,3 +121,4 @@ void TaskAutomatedTestBench(void* pvParameters) {
         vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
+

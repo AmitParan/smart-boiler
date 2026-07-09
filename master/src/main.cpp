@@ -128,7 +128,7 @@ void setup() {
 
     // 3. Start PLC communication task (always — mode switching is runtime)
     Serial.printf("[BOOT] Starting in %s mode\n",
-                  appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
+                  appMode == MODE_DEMO ? "DEMO" : "REALTIME");
     // PLC comms on Core 0 — completely isolated from LVGL (Core 1).
     // LVGL cannot preempt TaskMasterComms, eliminating inter-byte gaps.
     xTaskCreatePinnedToCore(TaskMasterComms,        "MasterComms",  4096, NULL, 2, NULL, 0);
@@ -206,3 +206,4 @@ void loop() {
     
     vTaskDelay(1000);
 }
+

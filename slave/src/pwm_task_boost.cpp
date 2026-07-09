@@ -32,12 +32,9 @@ void TaskPWM_Boost(void* pvParameters) {
             xSemaphoreGive(mutex_flow);
         }
 
-        // Flow interlock: enforced in DEMO and PRODUCTION; bypassed only in BENCH_TEST
-        if (currentMode != MODE_BENCH_TEST) {
-            if (!enabled || local_flow < 1.0f) { pwm_val = 0; }
-        } else {
-            if (!enabled) { pwm_val = 0; }
-        }
+        // Flow interlock: active in both MODE_DEMO and MODE_REALTIME.
+        // In DEMO, flow is mock-injected by master so the check is always correct.
+        if (!enabled || local_flow < 1.0f) { pwm_val = 0; }
 
         int on_ms  = (2000 * (int)pwm_val) / 100;
         int off_ms = 2000 - on_ms;
@@ -56,3 +53,4 @@ void TaskPWM_Boost(void* pvParameters) {
         }
     }
 }
+
