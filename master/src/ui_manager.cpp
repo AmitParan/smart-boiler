@@ -2179,18 +2179,24 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
     if (lvgl_port_lock(UI_REFRESH_RATE)) {
 
         // Water temperature + dynamic ring colour
-        if (lbl_water_temp != NULL && t_internal > -100) {
-            char buf[10];
-            snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", t_internal);
-            lv_label_set_text(lbl_water_temp, buf);
-
-            lv_color_t ring_col = (t_internal >= 55.0f)
-                                  ? lv_palette_main(LV_PALETTE_RED)
-                                  : (t_internal >= 38.0f)
-                                  ? lv_palette_main(LV_PALETTE_ORANGE)
-                                  : CLR_ACCENT;
-            if (temp_circle_obj != NULL)
-                lv_obj_set_style_border_color(temp_circle_obj, ring_col, 0);
+        if (lbl_water_temp != NULL) {
+            if (t_internal <= -100.0f) {
+                // Sensor disconnected (DS18B20 returns -127 when not wired)
+                lv_label_set_text(lbl_water_temp, "---");
+                if (temp_circle_obj != NULL)
+                    lv_obj_set_style_border_color(temp_circle_obj, CLR_SUBTEXT, 0);
+            } else {
+                char buf[10];
+                snprintf(buf, sizeof(buf), "%.0f\xc2\xb0", t_internal);
+                lv_label_set_text(lbl_water_temp, buf);
+                lv_color_t ring_col = (t_internal >= 55.0f)
+                                      ? lv_palette_main(LV_PALETTE_RED)
+                                      : (t_internal >= 38.0f)
+                                      ? lv_palette_main(LV_PALETTE_ORANGE)
+                                      : CLR_ACCENT;
+                if (temp_circle_obj != NULL)
+                    lv_obj_set_style_border_color(temp_circle_obj, ring_col, 0);
+            }
         }
 
         // Home shower-status line (single line, mirrors mockup)
@@ -2203,7 +2209,7 @@ void UI_UpdateSensorData(float t_internal, float t_boost, float flow, float powe
                 snprintf(msg, sizeof(msg), "Boiler is off");
                 lv_obj_set_style_text_color(lbl_shower_readiness, CLR_SUBTEXT, 0);
             } else if (wait_min > 0) {
-                snprintf(msg, sizeof(msg), "Heating up \xc2\xb7 ~%d min", wait_min);
+                snprintf(msg, sizeof(msg), "Heating up - ~%d min", wait_min);
                 lv_obj_set_style_text_color(lbl_shower_readiness, CLR_WAITING, 0);
             } else {
                 snprintf(msg, sizeof(msg), "Heating up...");
