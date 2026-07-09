@@ -35,6 +35,19 @@ void TaskCurrent(void * pvParameters) {
                   vref_actual, ACS758_VREF);
     Serial.printf("[CURRENT] VCC = %.3fV  sensitivity = %.1f mV/A (nominal 40.0)\n",
                   vcc_actual, sensitivity_actual * 1000.0f);
+
+    // Validate VREF within ±10% of nominal 2.5V
+    // If out of range the sensor is mis-powered — disable uncommanded-current check
+    const float VREF_MIN = ACS758_VREF * 0.90f;  // 2.25V
+    const float VREF_MAX = ACS758_VREF * 1.10f;  // 2.75V
+    if (vref_actual >= VREF_MIN && vref_actual <= VREF_MAX) {
+        current_sensor_valid = true;
+        Serial.println("[CURRENT] Sensor OK — uncommanded-current check ENABLED");
+    } else {
+        current_sensor_valid = false;
+        Serial.printf("[CURRENT] WARN: VREF out of range (%.3fV). Sensor mis-powered? Uncommanded-current check DISABLED.\n",
+                      vref_actual);
+    }
     Serial.println("[CURRENT] Task started");
 
     for(;;) {

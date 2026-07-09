@@ -73,9 +73,11 @@ void TaskSafety(void* pvParameters) {
             }
         }
 
-        // 3. Uncommanded current — SSR short/stuck triac (both modes)
+        // 3. Uncommanded current — only if sensor is properly calibrated
+        // If VREF was out of spec at boot, this check is disabled to prevent
+        // false faults from ADC noise (sensor mis-powered at <4.5V).
         bool any_commanded = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
-        if (!any_commanded && local_current > 0.5f) {
+        if (current_sensor_valid && !any_commanded && local_current > 0.5f) {
             fault = true;
             if (currentMode == MODE_DEMO) {
                 if (!uncommanded_curr_logged) {

@@ -51,6 +51,7 @@ extern volatile bool     slave_demo_fault_sim;   ///< CMD_DEMO_FAULT_SIM → stu
 // ---------------------------------------------------------------------------
 extern volatile uint32_t last_cmd_received_ms;  ///< millis() of last successful CMD parse
 extern volatile bool     cmd_ever_received;     ///< guards against false timeout at boot
+extern volatile bool     current_sensor_valid;  ///< true only if ACS758 VREF within ±10% of 2.5V at calibration
 
 // ---------------------------------------------------------------------------
 //  FreeRTOS mutual exclusion
