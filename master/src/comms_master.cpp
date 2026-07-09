@@ -141,12 +141,18 @@ static void sendCommand() {
     pkt.crc8    = proto_cmd_crc(&pkt);
     pkt.endByte = PROTO_END;
 
-    // Per-byte TX with 2ms gap — matches V5 timing that KQ-330 handles reliably.
-    // Core 0 isolation means delay(2) is close to actual 2ms (no LVGL preemption).
+    // ---------------------------------------------------------------------------
+    //  KQ-330 TX TIMING — DO NOT CHANGE
+    //  Tested and verified: delay(2) per byte is required for reliable delivery.
+    //  - Bulk write (no gap) caused the KQ-330 to drop the last 3-4 bytes.
+    //  - Core 0 isolation ensures delay(2) is close to actual 2ms (no LVGL jitter).
+    //  - Total TX time: 9 bytes × ~3ms = ~27ms
+    // ---------------------------------------------------------------------------
+    static const uint8_t KQ330_INTER_BYTE_DELAY_MS = 2u;
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
     for (uint8_t i = 0u; i < (uint8_t)sizeof(pkt); i++) {
         Serial1.write(raw[i]);
-        delay(2);
+        delay(KQ330_INTER_BYTE_DELAY_MS);
     }
 
     Serial.printf("[M->S] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X | [%s]\n",
