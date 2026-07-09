@@ -37,6 +37,10 @@ static float last_power_w    = 0.0f;
 
 static SystemManager s_manager;
 
+// Tracks whether the slave has reported a FAULT bit in its last STATUS packet.
+// Used by sendCommand() to override the state label in demo mode.
+static bool slave_has_fault = false;
+
 // ---------------------------------------------------------------------------
 //  processStatusPacket
 //  Decodes a validated raw STATUS buffer and updates the UI.
@@ -67,9 +71,22 @@ static void processStatusPacket(const uint8_t* raw) {
     last_flow       = flow;
     last_power_w    = power_w;
 
-    Serial.printf("[M<-S] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
-                  pkt->sequence, t_internal, t_boiler, t_boost,
-                  flow, power_w, pkt->statusByte);
+    // Demo mode: event-driven slave fault banner (logged ONCE per fault event)
+    if (appMode == APP_MODE_DEMO) {
+        static bool slave_fault_banner_shown = false;
+        if ((pkt->statusByte & STATUS_FAULT) && !slave_fault_banner_shown) {
+            Serial.println("[MASTER] \xe2\x9d\x8c RECEIVED STATUS_FAULT (0x08) FROM SLAVE! SYSTEM LOCKED.");
+            slave_fault_banner_shown = true;
+            slave_has_fault = true;
+        } else if (!(pkt->statusByte & STATUS_FAULT)) {
+            slave_fault_banner_shown = false;
+            slave_has_fault = false;
+        }
+    } else {
+        Serial.printf("[M<-S] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
+                      pkt->sequence, t_internal, t_boiler, t_boost,
+                      flow, power_w, pkt->statusByte);
+    }
 
     // In REALTIME mode the UI shows actual sensor data from the slave.
     // In DEMO mode the UI is updated by sendCommand() using demo values instead.
@@ -155,8 +172,50 @@ static void sendCommand() {
         delay(KQ330_INTER_BYTE_DELAY_MS);
     }
 
-    Serial.printf("[M->S] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X | [%s]\n",
-                  pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, pkt.cmdFlags, cmd.stateLabel);
+    // ---------------------------------------------------------------------------
+    //  Serial logging
+    // ---------------------------------------------------------------------------
+    if (appMode == APP_MODE_DEMO) {
+        // Event-driven: SAFETY_OVERRIDE from PLC loss (log ONCE)
+        static bool plc_loss_banner_shown = false;
+        if (cmd.state == BoilerState::SAFETY_OVERRIDE && demo_stop_comms && !plc_loss_banner_shown) {
+            Serial.println("[MASTER] \xe2\x9a\xa0\xef\xb8\x8f PLC TIMEOUT > 5s! ENTERING SAFETY_OVERRIDE");
+            plc_loss_banner_shown = true;
+        } else if (!demo_stop_comms) {
+            plc_loss_banner_shown = false;
+        }
+
+        // Periodic telemetry line — fixed-width columns
+        if (slave_has_fault) {
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | STATUS: 0x08 | SYSTEM HARD LOCKED\n",
+                          pkt.sequence, "FAULT");
+        } else if (demo_stop_comms) {
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | TEMP: %4.1f\xc2\xb0""C | PLC: LOST     | SEND -> INT:   0%% | BST:   0%%\n",
+                          pkt.sequence, "SAFETY_OVERRIDE", demo_temp);
+        } else if (demo_solar_active) {
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | SOLAR SWEEP: T=%4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT:   0%% | BST:   0%%\n",
+                          pkt.sequence, "STANDBY", demo_temp, demo_flow, (int)last_power_w);
+        } else if (cmd.state == BoilerState::STATE_SHOWER_BOOST && cmd.pwmBoost == 0u) {
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT: %3d%% | BST: %3d%% (Warm Enough)\n",
+                          pkt.sequence, "SHOWER_BOOST", demo_temp, demo_flow,
+                          (int)last_power_w, cmd.pwmInternal, cmd.pwmBoost);
+        } else {
+            const char* s;
+            switch (cmd.state) {
+                case BoilerState::STATE_HEATING_TANK:  s = "HEATING_TANK";  break;
+                case BoilerState::STATE_SHOWER_BOOST:  s = "SHOWER_BOOST";  break;
+                case BoilerState::STATE_STANDBY:       s = "STANDBY";       break;
+                case BoilerState::SAFETY_OVERRIDE:     s = "SAFETY_OVERRIDE"; break;
+                default:                               s = "OFF";           break;
+            }
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT: %3d%% | BST: %3d%%\n",
+                          pkt.sequence, s, demo_temp, demo_flow,
+                          (int)last_power_w, cmd.pwmInternal, cmd.pwmBoost);
+        }
+    } else {
+        Serial.printf("[M->S] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X | [%s]\n",
+                      pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, pkt.cmdFlags, cmd.stateLabel);
+    }
 }
 
 // ---------------------------------------------------------------------------

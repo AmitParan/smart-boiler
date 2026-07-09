@@ -55,6 +55,7 @@ void PLC_SendStatus() {
     float local_temps[3] = {0.0f, 0.0f, 0.0f};
     float local_flow     = 0.0f;
     float local_power    = 0.0f;
+    float local_current  = 0.0f;
 
     if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(10)) == pdTRUE) {
         local_temps[0] = temps[0];
@@ -67,7 +68,8 @@ void PLC_SendStatus() {
         xSemaphoreGive(mutex_flow);
     }
     if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
-        local_power = power_watts;
+        local_power   = power_watts;
+        local_current = current_rms;
         xSemaphoreGive(mutex_current);
     }
 
@@ -102,8 +104,17 @@ void PLC_SendStatus() {
         delay(2);
     }
 
-    // Suppress noisy PLC log in demo mode — slave serial shows only SSR events
-    if (currentMode != MODE_DEMO) {
+    // Serial output
+    if (currentMode == MODE_DEMO) {
+        // Demo periodic telemetry — fixed-width single line
+        // Column order: seq | SSR_INT | SSR_BST | TEMP | FLOW | PWR | CURR
+        Serial.printf("[SLAVE]  [seq=%03u] SSR_INT: %-3s | SSR_BST: %-3s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | CURR: %4.1fA\n",
+                      pkt.sequence,
+                      internal_ssr_on ? "ON " : "OFF",
+                      boost_ssr_on    ? "ON " : "OFF",
+                      local_temps[0], local_flow,
+                      (int)local_power, local_current);
+    } else {
         Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
                       pkt.sequence,
                       local_temps[0], local_temps[1], local_temps[2],

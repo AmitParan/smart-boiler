@@ -30,4 +30,5 @@ extern volatile float demo_flow;    ///< flow rate [L/min]
 extern volatile bool  demo_ui_on;   ///< boiler ON/OFF button state
 extern volatile bool  demo_stop_comms;  ///< when true TaskMasterComms suppresses TX (scenario 6)
 extern volatile bool  demo_fault_sim;   ///< when true slave simulates stuck-SSR current (scenario 8)
+extern volatile bool  demo_solar_active; ///< when true scenario 5 solar sweep is running (changes log label)
 #endif // APP_MODE_H
