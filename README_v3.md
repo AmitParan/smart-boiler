@@ -1,8 +1,8 @@
-# Smart Boiler — Project README (Branch: v4-freertos-refactor)
+# Smart Boiler — Project README (Branch: v7)
 
-Last updated: June 2026  
-Git branch: `v4-freertos-refactor`  
-Last commit: `92e3133` — fix(slave): revert TaskPLC to triggered response to prevent half-duplex collision
+Last updated: July 2026  
+Git branch: `v7`  
+Last commit: `3dd4834` — fix(demo): S5 solar bypass forces pwm=0 override regardless of SystemManager
 
 ---
 
@@ -225,71 +225,97 @@ monitor_speed = 115200
 
 ---
 
-## 6. Test Mode Reference
+## 6. Demo / Realtime Mode Framework
 
-### 6.1 Master — 4-Variable Test Harness (`comms_master.cpp`)
+### 6.1 Master — Operation Mode
 
-Edit these 4 constants, save, and re-upload to exercise the SystemManager without real sensors:
+Toggled at runtime from the **Settings** screen ("Switch" button).
 
-```cpp
-static const float TEST_TEMP  = 25.0f;   // tank temperature [°C]
-static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
-static const bool  TEST_UI_ON = true;    // boiler ON/OFF button
-static const bool  TEST_PLC   = true;    // false = simulate PLC lost
+| Mode | Default | Behaviour |
+|---|---|---|
+| `APP_MODE_DEMO` | ✅ boot default | Master injects scripted sensor data. PLC still active — slave receives real CMD and fires SSRs. |
+| `APP_MODE_REALTIME` | — | Master uses actual sensor values from slave STATUS packets. |
+
+### 6.2 Slave — SystemMode
+
+Slave switches automatically when CMD contains `CMD_DEMO_ACTIVE` flag.
+
+| Mode | Serial command | Behaviour |
+|---|---|---|
+| `MODE_BENCH_TEST` | `b` | Legacy: sensors + interlocks bypassed. Boot default. |
+| `MODE_DEMO` | `d` (or auto via CMD) | Mock sensors from master flags. All interlocks active. Faults auto-clear after 2s. |
+| `MODE_PRODUCTION` | `p` | Real sensors, all interlocks permanent. |
+
+### 6.3 Demo Scenario Flags in cmdFlags
+
+| Bit | Constant | Effect on slave |
+|---|---|---|
+| 3 | `CMD_DEMO_ACTIVE` | Slave enters MODE_DEMO, uses mock sensor logic |
+| 4 | `CMD_DEMO_FAULT_SIM` | Slave reports 13.6A even when SSRs off (S8) |
+| 2 | `CMD_DEMO_FLOW` | Slave injects flow = 6.5 L/min |
+| 5 | `CMD_DEMO_OVERTEMP` | Slave injects temp = 87°C (triggers safety in S7) |
+
+Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C, idle = 42°C.
+
+### 6.4 Automated 8-Scenario Test Bench
+
+`TaskAutomatedTestBench` runs on Core 1 and cycles through 8 scenarios automatically (60s each). Starts 6s after boot, only executes when `APP_MODE_DEMO`.
+
+| # | Category | Scenario | Temp | Flow | Expected State | SSR Int | SSR Boost |
+|---|---|---|---|---|---|:---:|:---:|
+| S1 | A | Pre-Heating | 25°C | 0 | STATE_HEATING_TANK | **ON** | OFF |
+| S2 | A | Cold Shower | 35°C | 6.5 | STATE_SHOWER_BOOST | OFF | **ON** |
+| S3 | A | Warm Shower Cutoff | 46°C | 6.5 | STATE_SHOWER_BOOST | OFF | OFF |
+| S4 | A | Standby | 42°C | 0 | STATE_STANDBY | OFF | OFF |
+| S5 | B | Solar Bypass | 28→42°C | 0 | STANDBY (forced) | OFF | OFF |
+| S6 | C | PLC Loss | — | — | SAFETY_OVERRIDE | OFF | OFF |
+| S7 | C | Overtemp | 75→87°C | 0 | SAFETY_OVERRIDE | OFF | OFF |
+| S8 | C | Stuck SSR | 25°C | 0 | FAULT (0x08) | OFF | OFF |
+
+### 6.5 Demo Serial Log Format
+
+**Master (every ~2s):**
+```
+[MASTER] [seq=003] STATE: HEATING_TANK   | TEMP: 25.0°C | FLOW:  0.0LPM | PWR: 2499W | SEND -> INT: 100% | BST:   0%
+[MASTER] ⚠️ PLC TIMEOUT > 5s! ENTERING SAFETY_OVERRIDE         ← event, once
+[MASTER] ❌ RECEIVED STATUS_FAULT (0x08) FROM SLAVE! SYSTEM LOCKED.  ← event, once
 ```
 
-| TEST_UI_ON | TEST_PLC | TEST_TEMP | TEST_FLOW | Expected State       | SSR Int | SSR Boost |
-|:---:|:---:|:---:|:---:|---|:---:|:---:|
-| any | **false** | any | any | `SAFETY_OVERRIDE` | OFF | OFF |
-| **false** | true | any | any | `STATE_OFF` | OFF | OFF |
-| true | true | any | **> 0.5** + temp < 45 | `STATE_SHOWER_BOOST` | OFF | **ON** |
-| true | true | any | **> 0.5** + temp ≥ 45 | `STATE_SHOWER_BOOST` | OFF | OFF |
-| true | true | **< 40** | 0 | `STATE_HEATING_TANK` | **ON** | OFF |
-| true | true | **≥ 40** | 0 | `STATE_STANDBY` | OFF | OFF |
-
-Serial log format:
+**Slave (every ~2s):**
 ```
-[TEST] t=25.0  flow=4.0  ui=ON  plc=OK
-[M->S] seq= 1 | pwmInt=  0%  pwmBst=100% | flags=0x02 | [STATE_SHOWER_BOOST]
+[SLAVE]  [seq=003] SSR_INT: ON  | SSR_BST: OFF | TEMP: 25.0°C | FLOW:  0.0LPM | PWR: 2499W | CURR: 11.4A
+[SLAVE] ⚠️ SOFTWARE CUTOFF: Temp >= 80°C. Dropping PWM to 0%.     ← event, once
+[SLAVE] ❌ HARDWARE INTERLOCK TRIP! (LM393N Simulation) -> CURRENT FORCED TO 0.0A!  ← event, once
+[SLAVE] !!! CRITICAL FAULT: UNCOMMANDED CURRENT DETECTED IN 50ms LOOP!  ← event, once
 ```
-
-### 6.2 Slave — SLAVE_TEST_MODE (`slave/src/config.h`)
-
-```cpp
-#define SLAVE_TEST_MODE  1   // 0 = production, 1 = bench testing (no sensors)
-```
-
-| Mode | Effect |
-|------|--------|
-| `1` (bench) | Bypasses flow interlock in `safety_task.cpp` and `pwm_task_boost.cpp`. Boost SSR fires even with no flow sensor connected. Uncommanded-current detection also disabled. |
-| `0` (production) | All safety interlocks active. Boost SSR requires flow ≥ 1.0 L/min. |
-
-> ⚠️ **Remember to set `SLAVE_TEST_MODE 0` before installing in the boiler.**
 
 ---
 
-## 7. Current Verified Status (as of branch v3)
+## 7. Current Verified Status (as of branch v7, July 2026)
 
-| Item                               | Status  | Notes                                      |
-|------------------------------------|---------|---------------------------------------------|
-| Master ↔ Slave PLC comms           | ✅ WORKS | Every second, no drops                     |
-| Master LVGL UI touchscreen         | ✅ WORKS | Boiler on/off, temp display, flow, power   |
-| SystemManager state machine        | ✅ WORKS | Correctly enters STATE_HEATING_TANK         |
-| Slave receives CMD, sends STATUS   | ✅ WORKS | `[S<-M]` and `[S->M]` log lines confirmed  |
-| SSR Internal indicator LED         | ✅ WORKS | Red LED on SSR lights when commanded ON    |
-| SSR Boost indicator LED            | ✅ WORKS | Confirmed working in SLAVE_TEST_MODE       |
-| DS18B20 temperature (3 sensors)    | ✅ WORKS | t1/t2/t3 reporting correctly               |
-| Flow sensor (YF-B6)                | ✅ WORKS | Reports 0.0 L/min at rest                  |
-| Current sensor (ACS758)            | ⚠️ PARTIAL | Reads 0W for 9W LED (expected — see §4); real boiler load untested |
-| Safety: overheat protection        | ✅ CODE OK | Not hardware-tested at high temp yet       |
-| Safety: flow interlock             | ✅ CODE OK | Bypassed in SLAVE_TEST_MODE; not yet tested with real flow |
-| Safety: uncommanded current        | ⚠️ KNOWN BUG | Can false-trigger if SSR is ON at boot calibration — see §7 |
-| Boost cutoff at 45°C               | ✅ CODE OK | Boost disabled when tank temp ≥ 45°C       |
-| SLAVE_TEST_MODE                    | ✅ REPLACED | Now `SystemMode` enum — runtime switchable via serial ('b'/'p') |
-| Master 4-variable test harness     | ✅ WORKS | Edit TEST_TEMP/TEST_FLOW/TEST_UI_ON/TEST_PLC in comms_master.cpp |
-| FreeRTOS mutexes (4 guards)        | ✅ WORKS | mutex_temps/flow/current/cmd — no race conditions |
-| Master ↔ Slave PLC comms (v4)      | ✅ WORKS | Every 1s, no drops after collision fix |
-| 220V load actually powered         | ❌ UNTESTED | 9W LED incompatible (too low current for SSR triac). Use resistive load. |
+| Item | Status | Notes |
+|---|---|---|
+| Master ↔ Slave PLC comms | ✅ WORKS | Stable with KQ-330 timing constants locked |
+| Master LVGL UI (v6 multi-screen) | ✅ WORKS | Home, Settings, Stats, Schedule, Diagnostics, Solar screens |
+| Demo / Realtime mode toggle | ✅ WORKS | Settings page "Switch" button |
+| 8-scenario automated test bench | ✅ WORKS | Runs on Core 1, 60s per scenario |
+| S1 Pre-Heating (SSR INT ON) | ✅ WORKS | 2500W confirmed |
+| S2 Cold Shower (SSR EXT ON) | ✅ WORKS | 3000W confirmed |
+| S3 Warm Shower Boost Cutoff | ✅ WORKS | Both SSRs off at 46°C |
+| S4 Standby | ✅ WORKS | 0W confirmed |
+| S5 Solar Bypass (forced 0W) | ✅ WORKS | 28→42°C sweep, SSRs stay off via override |
+| S6 PLC Loss watchdog | ✅ WORKS | Slave safety trips after 5s, auto-clears in demo |
+| S7 Overtemp cutoff | ✅ WORKS | Software @80°C, HW interlock sim @86°C |
+| S8 Stuck SSR detection | ✅ WORKS | Uncommanded current fault within 50ms |
+| UI power button locked in demo | ✅ WORKS | Cannot toggle boiler during demo |
+| Mock power values | ✅ WORKS | SSR_INT=2500W (11.36A), SSR_BOOST=3000W (13.64A) |
+| SystemMode runtime (slave) | ✅ WORKS | b/d/p serial commands + auto via CMD_DEMO_ACTIVE |
+| FreeRTOS mutexes (4 guards) | ✅ WORKS | mutex_temps/flow/current/cmd |
+| TaskMasterComms on Core 0 | ✅ WORKS | Isolated from LVGL (Core 1), no preemption |
+| KQ-330 timing locked | ✅ WORKS | 2ms/byte TX + 200ms guard — DO NOT CHANGE |
+| WiFi + NTP sync | ✅ WORKS | Auto-reconnect, time shown on dashboard |
+| Weather + Solar Forecast | ✅ WORKS | Fetched on WiFi connect, updated hourly/daily |
+| 220V actual load test | ❌ UNTESTED | Needs resistive load (≥40W), not 9W LED |
 
 ---
 
@@ -346,7 +372,7 @@ Before writing more code, confirm these hardware items work:
 - [ ] **UI-6** Test menu: expose serial test commands ('1'/'0'/'r') via touchscreen buttons
 
 ### Phase 4: FreeRTOS and Code Quality
-- [ ] **RTOS-1** Move master comms (`TaskMasterComms`) to Core 0, UI (LVGL loop) stays on Core 1 — reduces contention
+- [x] **RTOS-1** ✅ TaskMasterComms pinned to Core 0 — LVGL on Core 1 cannot preempt it
 - [ ] **RTOS-2** Replace shared global variables in slave (`shared_data.cpp`) with FreeRTOS queues or mutexes to prevent data races
 - [ ] **RTOS-3** Add task watchdog (WDT) to slave — any task stuck > 5s should trigger a reboot
 - [ ] **RTOS-4** Review task stack sizes — currently all 4096. Monitor with `uxTaskGetStackHighWaterMark()` under real load
@@ -394,15 +420,16 @@ T8  SSR short simulation (SW-2 fix required): force current with SSR OFF
 ### Master (this PC, COM7)
 ```bash
 cd c:\Users\eladmual\smart-boiler\master
-git pull origin v3
+git pull origin v7
 pio run --target upload
 pio device monitor --port COM7 --baud 115200
 ```
 
 ### Slave (personal PC)
 ```bash
-cd <repo root>/slave         # e.g. C:\Users\User\Desktop\smart boiler\smart-boiler\slave
-git pull origin v3
+cd "C:\Users\User\Desktop\smart boiler\smart-boiler"
+git pull origin v7
+cd slave
 pio run --target upload
 pio device monitor --baud 115200
 ```
@@ -411,12 +438,13 @@ pio device monitor --baud 115200
 
 ## 11. Git Branch Notes
 
-| Branch                       | Status   | Description                                  |
-|------------------------------|----------|----------------------------------------------|
-| `v4-freertos-refactor`       | ✅ STABLE | Current working baseline — use this          |
-| `v3`                         | ✅ STABLE | Previous baseline (no mutexes, SLAVE_TEST_MODE compile-time) |
-| `feature/system-manager-v2`  | archived | All v3 commits come from here               |
-| `feature/smart-brain`        | archived | FreeRTOS rework — blocked, do not use        |
-| `main`                       | old      | Pre-PLC version                              |
+| Branch | Status | Description |
+|---|---|---|
+| `v7` | ✅ **ACTIVE** | Full demo framework, multi-screen UI, 8-scenario test bench |
+| `v6-ui-upgrade` | ✅ STABLE | Multi-screen LVGL UI, WiFi, weather, solar forecast |
+| `v5` | ✅ STABLE | FreeRTOS refactor baseline |
+| `v4-freertos-refactor` | ✅ STABLE | Mutexes, SystemMode, Core 0 comms |
+| `v3` | archived | Original working PLC comms |
+| `main` | old | Pre-PLC version |
 
-To start working: `git checkout v4-freertos-refactor` on both machines.
+To start working: `git checkout v7` on both machines.
