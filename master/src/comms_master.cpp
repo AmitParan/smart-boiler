@@ -144,11 +144,11 @@ static void sendCommand() {
     pkt.crc8    = proto_cmd_crc(&pkt);
     pkt.endByte = PROTO_END;
 
+    // Write all bytes into UART FIFO at once — hardware clocks them out at 9600 baud
+    // with no gaps, eliminating LVGL preemption between bytes (fixes 13-byte packet loss).
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
-    for (uint8_t i = 0u; i < (uint8_t)sizeof(pkt); i++) {
-        Serial1.write(raw[i]);
-        delay(2);
-    }
+    Serial1.write(raw, sizeof(pkt));
+    Serial1.flush();  // block until last bit leaves the wire (~14 ms)
 
     Serial.printf("[M->S] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X | [%s]\n",
                   pkt.sequence, pkt.pwmInternal, pkt.pwmBoost, pkt.cmdFlags, cmd.stateLabel);
