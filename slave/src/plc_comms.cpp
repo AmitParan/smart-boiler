@@ -1,6 +1,7 @@
 #include "plc_comms.h"
 #include "config.h"
 #include "shared_data.h"
+#include "system_mode.h"
 #include <Arduino.h>
 
 // ---------------------------------------------------------------------------
@@ -205,6 +206,10 @@ bool PLC_ReceivePacket() {
                             }
                             last_rx_seq = cmd->sequence;
 
+                            // Update PLC watchdog
+                            last_cmd_received_ms = millis();
+                            cmd_ever_received    = true;
+
                             // Emergency stop overrides everything
                             if (cmd->cmdFlags & CMD_EMERGENCY_STOP) {
                                 if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -221,6 +226,23 @@ bool PLC_ReceivePacket() {
                                     cmd_pwm_boost    = cmd->pwmBoost;
                                     cmd_flags        = cmd->cmdFlags;
                                     xSemaphoreGive(mutex_cmd);
+                                }
+                            }
+
+                            // Handle demo mode fields
+                            if (cmd->cmdFlags & CMD_DEMO_ACTIVE) {
+                                slave_demo_temp_x10  = cmd->demoTempX10;
+                                slave_demo_flow_x10  = cmd->demoFlowX10;
+                                slave_demo_fault_sim = (cmd->cmdFlags & CMD_DEMO_FAULT_SIM) != 0;
+                                if (currentMode != MODE_DEMO) {
+                                    currentMode = MODE_DEMO;
+                                    Serial.println("[PLC] Mode set to DEMO by master");
+                                }
+                            } else {
+                                slave_demo_fault_sim = false;
+                                if (currentMode == MODE_DEMO) {
+                                    currentMode = MODE_PRODUCTION;
+                                    Serial.println("[PLC] Mode restored to PRODUCTION");
                                 }
                             }
 

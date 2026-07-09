@@ -5,8 +5,14 @@
 #include "boiler_protocol.h"
 #include <Arduino.h>
 
+// PLC loss is only a fault after first CMD is received (avoids boot-time false trip)
+#define PLC_TIMEOUT_MS  5000u
+
 void TaskSafety(void* pvParameters) {
     Serial.println("[SAFETY] Task started");
+
+    // For demo-mode auto-clear: track when system_fault was latched
+    static uint32_t fault_latch_ms = 0u;
 
     for (;;) {
         bool fault = false;
@@ -51,27 +57,30 @@ void TaskSafety(void* pvParameters) {
         }
 
         // -------------------------------------------------------------------
-        //  2. Boost heater flow interlock
-        //     Bypassed in MODE_BENCH_TEST (no flow sensor on desk).
+        //  2 & 3. Flow interlock + uncommanded current
+        //     Active in MODE_DEMO and MODE_PRODUCTION.
+        //     Bypassed only in legacy MODE_BENCH_TEST.
         // -------------------------------------------------------------------
-        bool boost_commanded = (local_flags & CMD_BOOST_ENABLE) &&
-                               (local_pwm_bst > 0u);
-        if (currentMode == MODE_PRODUCTION) {
+        if (currentMode != MODE_BENCH_TEST) {
+
+            // 2. Boost heater flow interlock
+            bool boost_commanded = (local_flags & CMD_BOOST_ENABLE) && (local_pwm_bst > 0u);
             if (boost_commanded && local_flow < 1.0f) {
                 Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
                 fault = true;
             }
-        }
 
-        // -------------------------------------------------------------------
-        //  3. Uncommanded current detection (SSR short-circuit)
-        //     Bypassed in MODE_BENCH_TEST (current sensor not connected).
-        // -------------------------------------------------------------------
-        if (currentMode == MODE_PRODUCTION) {
+            // 3. Uncommanded current detection (SSR short / stuck triac)
             bool any_commanded = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
             if (!any_commanded && local_current > 0.5f) {
-                Serial.println("[SAFETY] FAULT: Current detected without command"
-                               " - possible SSR short!");
+                Serial.println("[SAFETY] FAULT: Uncommanded current detected - possible SSR fault!");
+                fault = true;
+            }
+
+            // 4. PLC watchdog: fault if no CMD received for > PLC_TIMEOUT_MS
+            //    (scenario 6 test: master stops transmitting)
+            if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
+                Serial.println("[SAFETY] FAULT: PLC timeout - no CMD for >5s");
                 fault = true;
             }
         }
@@ -79,7 +88,24 @@ void TaskSafety(void* pvParameters) {
         if (fault) {
             ledcWrite(PIN_SSR_INT, 0);
             ledcWrite(PIN_SSR_EXT, 0);
-            system_fault = true;
+            if (!system_fault) {
+                system_fault   = true;
+                fault_latch_ms = millis();
+            }
+        }
+
+        // -------------------------------------------------------------------
+        //  Demo-mode auto-clear
+        //  In MODE_DEMO, safety faults are temporary (2 s) so the automated
+        //  test bench can continue through multiple scenarios without a reboot.
+        //  In production the latch is permanent (requires hardware reboot).
+        // -------------------------------------------------------------------
+        if (system_fault && currentMode == MODE_DEMO) {
+            if (millis() - fault_latch_ms > 2000UL) {
+                system_fault   = false;
+                fault_latch_ms = 0u;
+                Serial.println("[SAFETY] Demo fault auto-cleared");
+            }
         }
 
         vTaskDelay(pdMS_TO_TICKS(50));

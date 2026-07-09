@@ -1,6 +1,7 @@
 #include "current_task.h"
 #include "config.h"
 #include "shared_data.h"
+#include "system_mode.h"
 #include <Arduino.h>
 
 static const int numSamples = 100;
@@ -37,6 +38,32 @@ void TaskCurrent(void * pvParameters) {
     Serial.println("[CURRENT] Task started");
 
     for(;;) {
+        if (currentMode == MODE_DEMO) {
+            // Compute mock RMS current from commanded SSR state
+            uint8_t local_pwm_int = 0u, local_pwm_bst = 0u;
+            if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                local_pwm_int = cmd_pwm_internal;
+                local_pwm_bst = cmd_pwm_boost;
+                xSemaphoreGive(mutex_cmd);
+            }
+            float mock_rms;
+            if (slave_demo_fault_sim) {
+                // Scenario 8: simulate stuck triac - report load even with cmds=0
+                mock_rms = 13.6f;
+            } else if (local_pwm_int > 0u || local_pwm_bst > 0u) {
+                mock_rms = 13.6f;   // active heater element at full load
+            } else {
+                mock_rms = 0.0f;
+            }
+            if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+                current_rms = mock_rms;
+                power_watts = mock_rms * 220.0f;
+                xSemaphoreGive(mutex_current);
+            }
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+
         float sumSq = 0;
 
         // Sample the ADC to capture AC waveform (50 Hz)

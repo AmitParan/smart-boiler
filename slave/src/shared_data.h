@@ -39,6 +39,21 @@ extern volatile uint8_t cmd_flags;          // CMD_* flags from boiler_protocol.
 extern volatile bool system_fault;
 
 // ---------------------------------------------------------------------------
+//  Demo mode injected sensor values
+//  Written by plc_comms (from CMD demoTempX10/demoFlowX10 fields).
+//  Read by temp_task, flow_task, current_task when currentMode == MODE_DEMO.
+// ---------------------------------------------------------------------------
+extern volatile int16_t  slave_demo_temp_x10;   ///< injected tank temp x10 from CMD
+extern volatile uint16_t slave_demo_flow_x10;   ///< injected flow x10 from CMD
+extern volatile bool     slave_demo_fault_sim;  ///< simulate stuck-SSR current (scenario 8)
+
+// ---------------------------------------------------------------------------
+//  PLC watchdog — updated every time a valid CMD is received
+// ---------------------------------------------------------------------------
+extern volatile uint32_t last_cmd_received_ms;  ///< millis() of last successful CMD parse
+extern volatile bool     cmd_ever_received;     ///< guards against false timeout at boot
+
+// ---------------------------------------------------------------------------
 //  FreeRTOS mutual exclusion
 //  mutex_*    : Created in main.cpp before any task starts.
 //  timerMux   : Spinlock used only inside the flow sensor ISR.

@@ -24,5 +24,14 @@ SemaphoreHandle_t mutex_flow    = nullptr;
 SemaphoreHandle_t mutex_current = nullptr;
 SemaphoreHandle_t mutex_cmd     = nullptr;
 
+// Demo mode injected values
+volatile int16_t  slave_demo_temp_x10  = 250;    // 25.0 C default
+volatile uint16_t slave_demo_flow_x10  = 0u;
+volatile bool     slave_demo_fault_sim = false;
+
+// PLC watchdog
+volatile uint32_t last_cmd_received_ms = 0u;
+volatile bool     cmd_ever_received    = false;
+
 // Spinlock for flow pulse counter ISR
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;

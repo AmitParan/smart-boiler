@@ -32,8 +32,8 @@ void TaskPWM_Boost(void* pvParameters) {
             xSemaphoreGive(mutex_flow);
         }
 
-        // Flow interlock: only enforced in MODE_PRODUCTION
-        if (currentMode == MODE_PRODUCTION) {
+        // Flow interlock: enforced in DEMO and PRODUCTION; bypassed only in BENCH_TEST
+        if (currentMode != MODE_BENCH_TEST) {
             if (!enabled || local_flow < 1.0f) { pwm_val = 0; }
         } else {
             if (!enabled) { pwm_val = 0; }

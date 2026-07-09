@@ -3,6 +3,7 @@
 #include "DataManager.h"
 #include "SystemManagerTest.h"
 #include "app_mode.h"
+#include "demo_scenarios.h"
 #include <WiFi.h>
 #include <time.h>
 
@@ -128,7 +129,8 @@ void setup() {
     // 3. Start PLC communication task (always — mode switching is runtime)
     Serial.printf("[BOOT] Starting in %s mode\n",
                   appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
-    xTaskCreatePinnedToCore(TaskMasterComms, "MasterComms", 4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskMasterComms,        "MasterComms",  4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskAutomatedTestBench, "TestBench",    4096, NULL, 1, NULL, 1);
     
     // Example: Update time periodically (you can use RTC or NTP later)
     // UI_UpdateTime(12, 30);

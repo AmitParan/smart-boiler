@@ -31,7 +31,7 @@
 
 // Payload lengths (TYPE + SEQ + data fields, excluding framing bytes)
 #define STATUS_PAYLOAD_LEN    13u     // 1+1+2+2+2+2+2+1 = 13
-#define CMD_PAYLOAD_LEN        5u     // 1+1+1+1+1       =  5
+#define CMD_PAYLOAD_LEN        9u     // 1+1+1+1+1+2+2   =  9  (includes demoTempX10 + demoFlowX10)
 
 // ---------------------------------------------------------------------------
 //  statusByte bit-flags  (BoilerStatusPacket_t::statusByte)
@@ -47,6 +47,8 @@
 #define CMD_HEATER_ENABLE     (1u << 0)   // allow internal heater to run
 #define CMD_BOOST_ENABLE      (1u << 1)   // allow boost heater to run
 #define CMD_EMERGENCY_STOP    (1u << 7)   // cut both SSRs immediately
+#define CMD_DEMO_ACTIVE       (1u << 3)   // master is in demo mode; slave mirrors injected sensor data
+#define CMD_DEMO_FAULT_SIM    (1u << 4)   // slave must simulate stuck-SSR fault (scenario 8)
 
 // ---------------------------------------------------------------------------
 //  Packet structures
@@ -73,17 +75,20 @@ struct BoilerStatusPacket_t {
     uint8_t  endByte;         // PROTO_END = 0x55
 };
 
-// BoilerCmdPacket_t — 9 bytes on the wire
+// BoilerCmdPacket_t — 13 bytes on the wire
 // Direction : Master → Slave, once per second
+// demoTempX10 / demoFlowX10 are valid only when CMD_DEMO_ACTIVE is set.
 struct BoilerCmdPacket_t {
     uint8_t  startByte;       // PROTO_START       = 0xAA
-    uint8_t  length;          // CMD_PAYLOAD_LEN   = 5
+    uint8_t  length;          // CMD_PAYLOAD_LEN   = 9
     uint8_t  packetType;      // PROTO_TYPE_CMD    = 0x02
-    uint8_t  sequence;        // rolling 0‥255
-    uint8_t  pwmInternal;     // internal heater duty cycle [0‥100 %]
-    uint8_t  pwmBoost;        // boost heater duty cycle    [0‥100 %]
+    uint8_t  sequence;        // rolling 0⁆55
+    uint8_t  pwmInternal;     // internal heater duty cycle [0⁆50100 %]
+    uint8_t  pwmBoost;        // boost heater duty cycle    [0⁆50100 %]
     uint8_t  cmdFlags;        // CMD_* flags
-    uint8_t  crc8;            // CRC-8 over bytes [packetType .. cmdFlags]
+    int16_t  demoTempX10;     // injected tank temp × 10 [°C] (demo mode only)
+    uint16_t demoFlowX10;     // injected flow × 10 [L/min]  (demo mode only)
+    uint8_t  crc8;            // CRC-8 over bytes [packetType .. demoFlowX10]
     uint8_t  endByte;         // PROTO_END = 0x55
 };
 

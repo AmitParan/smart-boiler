@@ -1,6 +1,7 @@
 #include "flow_task.h"
 #include "config.h"
 #include "shared_data.h"
+#include "system_mode.h"
 #include <Arduino.h>
 
 // Internal variable for pulse counting (only this file knows it)
@@ -18,6 +19,17 @@ void TaskFlow(void * pvParameters) {
     attachInterrupt(digitalPinToInterrupt(PIN_FLOW_SENSOR), pulseCounter, RISING);
 
     for(;;) {
+        if (currentMode == MODE_DEMO) {
+            // Mirror master-injected flow rate
+            float mock_flow = slave_demo_flow_x10 / 10.0f;
+            if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+                current_flow = mock_flow;
+                xSemaphoreGive(mutex_flow);
+            }
+            vTaskDelay(pdMS_TO_TICKS(500));
+            continue;
+        }
+
         // Measure for one second
         vTaskDelay(pdMS_TO_TICKS(1000));
 

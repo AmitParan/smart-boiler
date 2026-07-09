@@ -84,48 +84,65 @@ static void processStatusPacket(const uint8_t* raw) {
 //  Builds a BoilerCmdPacket_t using SystemManager and transmits it.
 //  Called once per second from TaskMasterComms.
 //
-//  APP_MODE_DEMO     — inputs come from demo_temp/demo_flow/demo_ui_on
-//                      (written by the scenario task). UI updated with demo values.
-//  APP_MODE_REALTIME — inputs come from last STATUS packet (last_t_internal etc.)
-//                      UI updated via processStatusPacket().
+//  APP_MODE_DEMO     — SystemInputs from demo vars (set by TaskAutomatedTestBench).
+//                      CMD_DEMO_ACTIVE flag is set; demoTempX10/demoFlowX10 are packed
+//                      so the slave can mirror them as mock sensor values.
+//                      If demo_stop_comms (scenario 6), processes SystemManager for UI
+//                      but suppresses TX so the slave detects a PLC timeout.
+//  APP_MODE_REALTIME — inputs from last STATUS packet; no demo fields in CMD.
 // ---------------------------------------------------------------------------
 static void sendCommand() {
-    BoilerCmdPacket_t pkt;
-    pkt.startByte  = PROTO_START;
-    pkt.length     = CMD_PAYLOAD_LEN;
-    pkt.packetType = PROTO_TYPE_CMD;
-    pkt.sequence   = tx_seq++;
-
-    // Build SystemInputs based on current mode
+    // Build SystemInputs based on mode
     SystemInputs inputs;
     inputs.targetShowerTemp = (float)target_temperature;
-    inputs.plcConnected     = true;
 
     if (appMode == APP_MODE_DEMO) {
         inputs.currentTemp  = demo_temp;
         inputs.flowRateLPM  = demo_flow;
         inputs.uiStateOn    = demo_ui_on;
-        // In demo mode, update UI with the scripted values so the display matches
+        inputs.plcConnected = !demo_stop_comms;  // false during scenario 6
         UI_UpdateSensorData(demo_temp, demo_temp, demo_flow, 0.0f);
     } else {
-        // REALTIME: use actual sensor data received from slave STATUS packets
         inputs.currentTemp  = last_t_internal;
         inputs.flowRateLPM  = last_flow;
         inputs.uiStateOn    = boiler_state;
+        inputs.plcConnected = true;
     }
 
     SystemCommand cmd = s_manager.process(inputs);
     UI_UpdateSystemMode(cmd.stateLabel);
 
+    // Scenario 6: suppress TX so slave triggers PLC-loss watchdog
+    if (demo_stop_comms) {
+        tx_seq++;
+        Serial.printf("[DEMO] TX suppressed | [%s]\n", cmd.stateLabel);
+        return;
+    }
+
+    // Build packet
+    BoilerCmdPacket_t pkt;
+    pkt.startByte   = PROTO_START;
+    pkt.length      = CMD_PAYLOAD_LEN;
+    pkt.packetType  = PROTO_TYPE_CMD;
+    pkt.sequence    = tx_seq++;
     pkt.pwmInternal = cmd.pwmInternal;
     pkt.pwmBoost    = cmd.pwmBoost;
-    pkt.cmdFlags    = (cmd.pwmInternal > 0) ? CMD_HEATER_ENABLE  : 0u;
-    pkt.cmdFlags   |= (cmd.pwmBoost    > 0) ? CMD_BOOST_ENABLE   : 0u;
+    pkt.cmdFlags    = (cmd.pwmInternal > 0) ? CMD_HEATER_ENABLE : 0u;
+    pkt.cmdFlags   |= (cmd.pwmBoost    > 0) ? CMD_BOOST_ENABLE  : 0u;
+
+    if (appMode == APP_MODE_DEMO) {
+        pkt.cmdFlags    |= CMD_DEMO_ACTIVE;
+        if (demo_fault_sim) pkt.cmdFlags |= CMD_DEMO_FAULT_SIM;
+        pkt.demoTempX10  = (int16_t)(demo_temp * 10.0f);
+        pkt.demoFlowX10  = (uint16_t)(demo_flow * 10.0f);
+    } else {
+        pkt.demoTempX10 = 0;
+        pkt.demoFlowX10 = 0;
+    }
 
     pkt.crc8    = proto_cmd_crc(&pkt);
     pkt.endByte = PROTO_END;
 
-    // Transmit with small inter-byte gap
     const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
     for (uint8_t i = 0u; i < (uint8_t)sizeof(pkt); i++) {
         Serial1.write(raw[i]);
