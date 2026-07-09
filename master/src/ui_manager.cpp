@@ -4,6 +4,7 @@
 
 #include "ui_manager.h"
 #include <Arduino.h>
+#include "app_mode.h"
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
@@ -45,6 +46,7 @@ static const int LEAD_TIME_MIN = 15;  // assumed pre-heat lead time for schedule
 // ---------------------------------------------------------------------------
 static lv_obj_t* page_home        = NULL;
 static lv_obj_t* page_settings     = NULL;
+static lv_obj_t* lbl_app_mode      = NULL;  // mode toggle label in Settings
 static lv_obj_t* page_schedule     = NULL;
 static lv_obj_t* page_network      = NULL;
 static lv_obj_t* page_password     = NULL;
@@ -1175,6 +1177,16 @@ static void build_home_page(lv_obj_t* scr) {
     lv_obj_add_event_cb(page_home, screen_touched_cb, LV_EVENT_PRESSED, NULL);
 }
 
+static void mode_toggle_cb(lv_event_t*) {
+    last_touch_time = millis();
+    appMode = (appMode == APP_MODE_DEMO) ? APP_MODE_REALTIME : APP_MODE_DEMO;
+    lv_label_set_text(lbl_app_mode,
+                      appMode == APP_MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
+                                               : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
+    Serial.printf("[UI] Mode switched to: %s\n",
+                  appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
+}
+
 static void build_settings_page(lv_obj_t* scr) {
     page_settings = lv_obj_create(scr);
     disableScroll(page_settings);
@@ -1298,6 +1310,45 @@ static void build_settings_page(lv_obj_t* scr) {
 
     make_settings_nav_btn(LV_SYMBOL_LIST, "Schedule", CLR_ACCENT, goto_schedule_cb);
     make_settings_nav_btn(LV_SYMBOL_EDIT, "Diagnostics", CLR_SUBTEXT, goto_diagnostics_cb);
+
+    // ---- Demo / Realtime mode toggle ----------------------------------------
+    lv_obj_t* lbl_mode_title = lv_label_create(body);
+    lv_label_set_text(lbl_mode_title, "Operation mode");
+    lv_obj_set_style_text_font(lbl_mode_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_mode_title, CLR_SUBTEXT, 0);
+    lv_obj_set_pos(lbl_mode_title, 0, 290);
+
+    lv_obj_t* mode_row = lv_obj_create(body);
+    disableScroll(mode_row);
+    lv_obj_set_size(mode_row, lv_pct(100), 60);
+    lv_obj_set_pos(mode_row, 0, 316);
+    lv_obj_set_style_bg_color(mode_row, lv_color_white(), 0);
+    lv_obj_set_style_border_width(mode_row, 2, 0);
+    lv_obj_set_style_border_color(mode_row, CLR_BORDER, 0);
+    lv_obj_set_style_radius(mode_row, 16, 0);
+    lv_obj_set_style_pad_hor(mode_row, 20, 0);
+    lv_obj_set_flex_flow(mode_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(mode_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* lbl_mode_name = lv_label_create(mode_row);
+    lbl_app_mode = lbl_mode_name;
+    lv_label_set_text(lbl_mode_name,
+                      appMode == APP_MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
+                                               : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
+    lv_obj_set_style_text_font(lbl_mode_name, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_mode_name, CLR_TEXT, 0);
+
+    lv_obj_t* btn_mode = lv_btn_create(mode_row);
+    lv_obj_set_size(btn_mode, 120, 42);
+    lv_obj_set_style_radius(btn_mode, 12, 0);
+    lv_obj_set_style_bg_color(btn_mode, CLR_ACCENT, 0);
+    lv_obj_set_style_border_width(btn_mode, 0, 0);
+    lv_obj_add_event_cb(btn_mode, mode_toggle_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* lbl_btn = lv_label_create(btn_mode);
+    lv_label_set_text(lbl_btn, "Switch");
+    lv_obj_set_style_text_font(lbl_btn, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_btn, lv_color_white(), 0);
+    lv_obj_center(lbl_btn);
 }
 
 static lv_obj_t* make_seg_btn(lv_obj_t* parent, const char* text, lv_event_cb_t cb, lv_obj_t** out_lbl) {

@@ -3,6 +3,7 @@
 #include "config.h"
 #include "ui_manager.h"
 #include "SystemManager.h"
+#include "app_mode.h"
 
 // Access UI state set by the user on the touch screen (defined in ui_manager.cpp)
 extern bool boiler_state;
@@ -70,31 +71,23 @@ static void processStatusPacket(const uint8_t* raw) {
                   pkt->sequence, t_internal, t_boiler, t_boost,
                   flow, power_w, pkt->statusByte);
 
-    // Update the LVGL UI (function is LVGL-lock safe)
-    UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
+    // In REALTIME mode the UI shows actual sensor data from the slave.
+    // In DEMO mode the UI is updated by sendCommand() using demo values instead.
+    if (appMode == APP_MODE_REALTIME) {
+        UI_UpdateSensorData(t_internal, t_boost, flow, power_w);
+    }
     UI_UpdatePLCStatus(true);
 }
-
-// ===========================================================================
-//  MANUAL TEST — edit these 4 values, save, and re-upload to see brain output
-//
-//  Expected states:
-//   STATE_OFF           →  TEST_UI_ON = false
-//   STATE_HEATING_TANK  →  TEST_UI_ON = true,  TEST_TEMP < 40,  TEST_FLOW = 0
-//   STATE_STANDBY       →  TEST_UI_ON = true,  TEST_TEMP > 40,  TEST_FLOW = 0
-//   STATE_SHOWER_BOOST  →  TEST_UI_ON = true,  TEST_FLOW > 0.5,  TEST_TEMP < 45 (boost ON)
-//                          TEST_UI_ON = true,  TEST_FLOW > 0.5,  TEST_TEMP >= 45 (boost OFF — already warm)
-//   SAFETY_OVERRIDE     →  TEST_PLC = false
-// ===========================================================================
-static const float TEST_TEMP  = 35.0f;   // tank temperature [°C]
-static const float TEST_FLOW  = 0.0f;    // flow rate [L/min]
-static const bool  TEST_UI_ON = true;   // boiler ON/OFF button
-static const bool  TEST_PLC   = true;    // false = simulate PLC lost
 
 // ---------------------------------------------------------------------------
 //  sendCommand
 //  Builds a BoilerCmdPacket_t using SystemManager and transmits it.
 //  Called once per second from TaskMasterComms.
+//
+//  APP_MODE_DEMO     — inputs come from demo_temp/demo_flow/demo_ui_on
+//                      (written by the scenario task). UI updated with demo values.
+//  APP_MODE_REALTIME — inputs come from last STATUS packet (last_t_internal etc.)
+//                      UI updated via processStatusPacket().
 // ---------------------------------------------------------------------------
 static void sendCommand() {
     BoilerCmdPacket_t pkt;
@@ -103,13 +96,23 @@ static void sendCommand() {
     pkt.packetType = PROTO_TYPE_CMD;
     pkt.sequence   = tx_seq++;
 
-    // Build inputs from test values
+    // Build SystemInputs based on current mode
     SystemInputs inputs;
-    inputs.currentTemp      = TEST_TEMP;
-    inputs.flowRateLPM      = TEST_FLOW;
     inputs.targetShowerTemp = (float)target_temperature;
-    inputs.uiStateOn        = TEST_UI_ON;
-    inputs.plcConnected     = TEST_PLC;
+    inputs.plcConnected     = true;
+
+    if (appMode == APP_MODE_DEMO) {
+        inputs.currentTemp  = demo_temp;
+        inputs.flowRateLPM  = demo_flow;
+        inputs.uiStateOn    = demo_ui_on;
+        // In demo mode, update UI with the scripted values so the display matches
+        UI_UpdateSensorData(demo_temp, demo_temp, demo_flow, 0.0f);
+    } else {
+        // REALTIME: use actual sensor data received from slave STATUS packets
+        inputs.currentTemp  = last_t_internal;
+        inputs.flowRateLPM  = last_flow;
+        inputs.uiStateOn    = boiler_state;
+    }
 
     SystemCommand cmd = s_manager.process(inputs);
     UI_UpdateSystemMode(cmd.stateLabel);
@@ -232,13 +235,10 @@ void TaskMasterComms(void* pvParameters) {
     Serial1.begin(9600, SERIAL_8N1, MASTER_RX_PIN, MASTER_TX_PIN);
     Serial.printf("[COMMS] Master comms task started (RX=GPIO%d TX=GPIO%d)\n",
                   MASTER_RX_PIN, MASTER_TX_PIN);
+    Serial.printf("[COMMS] Mode: %s\n",
+                  appMode == APP_MODE_DEMO ? "DEMO" : "REALTIME");
 
     unsigned long last_cmd_ms = millis();
-
-    Serial.printf("[TEST] t=%.1f  flow=%.1f  ui=%s  plc=%s\n",
-                  TEST_TEMP, TEST_FLOW,
-                  TEST_UI_ON ? "ON" : "OFF",
-                  TEST_PLC   ? "OK" : "LOST");
 
     for (;;) {
 
