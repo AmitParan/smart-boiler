@@ -278,7 +278,10 @@ void TaskMasterComms(void* pvParameters) {
             }
             if (!got_status) {
                 Serial.println("[COMMS] No STATUS received within 3s");
-                UI_UpdatePLCStatus(false);
+                // In demo mode keep UI showing Connected — loss is intentional (scenario 6)
+                if (appMode != APP_MODE_DEMO) {
+                    UI_UpdatePLCStatus(false);
+                }
             }
         }
 

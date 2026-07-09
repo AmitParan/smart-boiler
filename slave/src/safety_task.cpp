@@ -78,10 +78,16 @@ void TaskSafety(void* pvParameters) {
             }
 
             // 4. PLC watchdog: fault if no CMD received for > PLC_TIMEOUT_MS
-            //    (scenario 6 test: master stops transmitting)
+            //    Log only once per fault event to avoid serial spam (scenario 6)
+            static bool plc_timeout_logged = false;
             if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
-                Serial.println("[SAFETY] FAULT: PLC timeout - no CMD for >5s");
+                if (!plc_timeout_logged) {
+                    Serial.println("[SAFETY] FAULT: PLC timeout - no CMD for >5s");
+                    plc_timeout_logged = true;
+                }
                 fault = true;
+            } else {
+                plc_timeout_logged = false;
             }
         }
 
