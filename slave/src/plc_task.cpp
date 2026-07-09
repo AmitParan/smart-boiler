@@ -28,11 +28,9 @@ void TaskPLC(void* pvParameters) {
         bool cmd_received = PLC_ReceivePacket();
 
         if (cmd_received) {
-            // Guard time: wait for KQ-330 power line carrier to fully settle
-            // after master's CMD transmission before we start transmitting STATUS.
-            // 200ms was too short — carrier settling on the KQ-330 can exceed 200ms,
-            // causing STATUS to collide with the CMD carrier remnant and get lost.
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            // Guard time: let the KQ-330 power line carrier settle after CMD.
+            // 200ms matches V5 which had reliable comms.
+            vTaskDelay(pdMS_TO_TICKS(200));
             PLC_SendStatus();
             last_status_ms = millis();
         }
