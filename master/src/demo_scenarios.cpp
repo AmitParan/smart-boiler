@@ -63,10 +63,10 @@ void TaskAutomatedTestBench(void* pvParameters) {
 
         banner("CATEGORY B | SCENARIO 5: Predictive Solar Bypass [60s]",
                "Injection: SOLAR_ACTIVE=true  FLOW=0.0  TEMP: sweep 28->42C",
-               "STATE_STANDBY throughout | Both SSRs OFF | Solar heating simulation");
+               "Both SSRs FORCED to 0% throughout - boiler yields to solar prediction");
         demo_solar_active = true;
         for (int i = 0; i <= 20; i++) {
-            float t = 28.0f + (14.0f * (float)i / 20.0f);
+            float t = 28.0f + (14.0f * (float)i / 20.0f);  // 28 -> 42 C
             demo_set(t, 0.0f, true, false, false);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }

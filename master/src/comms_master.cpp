@@ -128,6 +128,15 @@ static void sendCommand() {
     }
 
     SystemCommand cmd = s_manager.process(inputs);
+
+    // Scenario 5: Predictive Solar Bypass — override SystemManager output to 0%
+    // The boiler proactively stays off because it knows solar is heating the tank.
+    // Without this override, SystemManager would fire the heater at temps < 40°C.
+    if (demo_solar_active) {
+        cmd.pwmInternal = 0u;
+        cmd.pwmBoost    = 0u;
+    }
+
     UI_UpdateSystemMode(cmd.stateLabel);
 
     // Scenario 6: suppress TX so slave triggers PLC-loss watchdog
@@ -193,8 +202,15 @@ static void sendCommand() {
             Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | TEMP: %4.1f\xc2\xb0""C | PLC: LOST     | SEND -> INT:   0%% | BST:   0%%\n",
                           pkt.sequence, "SAFETY_OVERRIDE", demo_temp);
         } else if (demo_solar_active) {
-            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | SOLAR SWEEP: T=%4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT:   0%% | BST:   0%%\n",
-                          pkt.sequence, "STANDBY", demo_temp, demo_flow, (int)last_power_w);
+            // Use actual SystemManager state label (must be STANDBY when temp >= 40C)
+            const char* solar_state;
+            switch (cmd.state) {
+                case BoilerState::STATE_STANDBY: solar_state = "STANDBY"; break;
+                default:                        solar_state = cmd.stateLabel; break;
+            }
+            Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | SOLAR SWEEP: T=%4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT: %3d%% | BST: %3d%%\n",
+                          pkt.sequence, solar_state, demo_temp, demo_flow,
+                          (int)last_power_w, cmd.pwmInternal, cmd.pwmBoost);
         } else if (cmd.state == BoilerState::STATE_SHOWER_BOOST && cmd.pwmBoost == 0u) {
             Serial.printf("[MASTER] [seq=%03u] STATE: %-15s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | SEND -> INT: %3d%% | BST: %3d%% (Warm Enough)\n",
                           pkt.sequence, "SHOWER_BOOST", demo_temp, demo_flow,
