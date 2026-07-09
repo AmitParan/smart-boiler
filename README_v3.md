@@ -2,7 +2,7 @@
 
 Last updated: July 2026  
 Git branch: `v7`  
-Last commit: `3dd4834` — fix(demo): S5 solar bypass forces pwm=0 override regardless of SystemManager
+Last commit: `41c3669` — fix(slave): S8 uncommanded-current always active in DEMO; REALTIME only when sensor calibrated
 
 ---
 
@@ -233,8 +233,11 @@ Toggled at runtime from the **Settings** screen ("Switch" button).
 
 | Mode | Default | Behaviour |
 |---|---|---|
-| `APP_MODE_DEMO` | ✅ boot default | Master injects scripted sensor data. PLC still active — slave receives real CMD and fires SSRs. |
-| `APP_MODE_REALTIME` | — | Master uses actual sensor values from slave STATUS packets. |
+| `MODE_DEMO` | ✅ boot default | Slave uses mock sensor data driven by master CMD flags. All interlocks active. Faults auto-clear (2s). |
+| `MODE_REALTIME` | — | Slave reads real DS18B20 / YF-B6 / ACS758 sensors. All safety interlocks permanently active. |
+
+Auto-switch: `CMD_DEMO_ACTIVE` flag in every CMD propagates the master mode to the slave automatically.  
+Serial override: `d` = DEMO, `r` = REALTIME, `?` = status
 
 ### 6.2 Slave — SystemMode
 
@@ -309,12 +312,14 @@ Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C
 | S8 Stuck SSR detection | ✅ WORKS | Uncommanded current fault within 50ms |
 | UI power button locked in demo | ✅ WORKS | Cannot toggle boiler during demo |
 | Mock power values | ✅ WORKS | SSR_INT=2500W (11.36A), SSR_BOOST=3000W (13.64A) |
-| SystemMode runtime (slave) | ✅ WORKS | b/d/p serial commands + auto via CMD_DEMO_ACTIVE |
+| SystemMode runtime (slave) | ✅ WORKS | d=DEMO, r=REALTIME serial commands + auto via CMD_DEMO_ACTIVE |
 | FreeRTOS mutexes (4 guards) | ✅ WORKS | mutex_temps/flow/current/cmd |
 | TaskMasterComms on Core 0 | ✅ WORKS | Isolated from LVGL (Core 1), no preemption |
 | KQ-330 timing locked | ✅ WORKS | 2ms/byte TX + 200ms guard — DO NOT CHANGE |
 | WiFi + NTP sync | ✅ WORKS | Auto-reconnect, time shown on dashboard |
 | Weather + Solar Forecast | ✅ WORKS | Fetched on WiFi connect, updated hourly/daily |
+| Temp display (REALTIME, no sensor) | ✅ FIXED | Shows `---` instead of stale value when DS18B20 disconnected |
+| Uncommanded-current check | ✅ WORKS | Auto-disabled when VREF out of spec (ADC calibration issue); S8 always active in DEMO |
 | 220V actual load test | ❌ UNTESTED | Needs resistive load (≥40W), not 9W LED |
 
 ---
