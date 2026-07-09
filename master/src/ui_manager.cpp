@@ -1185,6 +1185,10 @@ static void build_home_page(lv_obj_t* scr) {
 static void mode_toggle_cb(lv_event_t*) {
     last_touch_time = millis();
     appMode = (appMode == APP_MODE_DEMO) ? APP_MODE_REALTIME : APP_MODE_DEMO;
+    // Clear all demo control flags when switching modes
+    demo_stop_comms  = false;
+    demo_fault_sim   = false;
+    demo_solar_active = false;
     lv_label_set_text(lbl_app_mode,
                       appMode == APP_MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
                                                : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");

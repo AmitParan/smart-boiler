@@ -140,7 +140,8 @@ static void sendCommand() {
     UI_UpdateSystemMode(cmd.stateLabel);
 
     // Scenario 6: suppress TX so slave triggers PLC-loss watchdog
-    if (demo_stop_comms) {
+    // Only applies in DEMO mode — never suppress TX in REALTIME
+    if (appMode == APP_MODE_DEMO && demo_stop_comms) {
         tx_seq++;
         Serial.printf("[DEMO] TX suppressed | [%s]\n", cmd.stateLabel);
         return;

@@ -19,6 +19,9 @@ static void banner(const char* cat, const char* title, const char* expected) {
     Serial.println("[MASTER] ============================================================");
 }
 
+// Check mode and abort cycle if switched to REALTIME mid-cycle
+#define DEMO_CHECK() if (appMode != APP_MODE_DEMO) { demo_stop_comms = false; demo_fault_sim = false; demo_solar_active = false; continue; }
+
 void TaskAutomatedTestBench(void* pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(6000));
     Serial.println("[MASTER] Automated test bench started. Waiting for first CMD cycle...");
@@ -33,46 +36,52 @@ void TaskAutomatedTestBench(void* pvParameters) {
         Serial.println("[MASTER] ***          SMART BOILER - DEMO CYCLE START            ***");
         Serial.println("[MASTER] ************************************************************");
 
-        // --- CATEGORY A: Normal Lifecycle ---
+        // --- CATEGORY A ---
 
         banner("CATEGORY A | SCENARIO 1: Pre-Heating (Tank Only) [60s]",
                "Injection: UI=ON  FLOW=0.0  TEMP=25.0C  PLC=OK",
                "STATE_HEATING_TANK | SSR_INT ON | SSR_BST OFF | PWR: 2500W");
         demo_set(25.0f, 0.0f, true, false, false);
         vTaskDelay(pdMS_TO_TICKS(60000));
+        DEMO_CHECK();
 
         banner("CATEGORY A | SCENARIO 2: Cold Shower Start (Boost Activated) [60s]",
                "Injection: UI=ON  FLOW=6.5  TEMP=35.0C  PLC=OK",
                "STATE_SHOWER_BOOST | SSR_INT OFF | SSR_BST ON  | PWR: 3000W");
         demo_set(35.0f, 6.5f, true, false, false);
         vTaskDelay(pdMS_TO_TICKS(60000));
+        DEMO_CHECK();
 
         banner("CATEGORY A | SCENARIO 3: Warm Shower - Boost Cutoff [60s]",
                "Injection: UI=ON  FLOW=6.5  TEMP=46.0C (above 45C cutoff)  PLC=OK",
                "STATE_SHOWER_BOOST | SSR_INT OFF | SSR_BST OFF | PWR: 0W (Warm Enough)");
         demo_set(46.0f, 6.5f, true, false, false);
         vTaskDelay(pdMS_TO_TICKS(60000));
+        DEMO_CHECK();
 
         banner("CATEGORY A | SCENARIO 4: Redundant Request - Standby [60s]",
                "Injection: UI=ON  FLOW=0.0  TEMP=42.0C  PLC=OK",
                "STATE_STANDBY | SSR_INT OFF | SSR_BST OFF | PWR: 0W");
         demo_set(42.0f, 0.0f, true, false, false);
         vTaskDelay(pdMS_TO_TICKS(60000));
+        DEMO_CHECK();
 
-        // --- CATEGORY B: Smart Environmental ---
+        // --- CATEGORY B ---
 
         banner("CATEGORY B | SCENARIO 5: Predictive Solar Bypass [60s]",
                "Injection: SOLAR_ACTIVE=true  FLOW=0.0  TEMP: sweep 28->42C",
                "Both SSRs FORCED to 0% throughout - boiler yields to solar prediction");
         demo_solar_active = true;
         for (int i = 0; i <= 20; i++) {
+            if (appMode != APP_MODE_DEMO) break;
             float t = 28.0f + (14.0f * (float)i / 20.0f);  // 28 -> 42 C
             demo_set(t, 0.0f, true, false, false);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         demo_solar_active = false;
+        DEMO_CHECK();
 
-        // --- CATEGORY C: Fault Tolerance ---
+        // --- CATEGORY C ---
 
         banner("CATEGORY C | SCENARIO 6: PLC Communication Loss [60s]",
                "Injection: TX SUPPRESSED for 60s to simulate link dropout",
@@ -80,19 +89,23 @@ void TaskAutomatedTestBench(void* pvParameters) {
         demo_set(30.0f, 0.0f, true, true, false);
         vTaskDelay(pdMS_TO_TICKS(60000));
         demo_stop_comms = false;
+        DEMO_CHECK();
         Serial.println("[MASTER] S6: TX resumed - waiting for slave resync...");
         vTaskDelay(pdMS_TO_TICKS(2000));
+        DEMO_CHECK();
 
         banner("CATEGORY C | SCENARIO 7: Critical Overtemp Cutoff [60s]",
                "Injection: TEMP sweep 75->87C (software cutoff @80C, HW interlock @86C)",
                "Slave FAULT @80C (software) + LM393N simulation @86C");
         for (int i = 0; i <= 20; i++) {
+            if (appMode != APP_MODE_DEMO) break;
             float t = 75.0f + ((float)i / 20.0f) * 12.0f;
             demo_set(t, 0.0f, true, false, false);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         demo_set(25.0f, 0.0f, true, false, false);
         vTaskDelay(pdMS_TO_TICKS(2000));
+        DEMO_CHECK();
 
         banner("CATEGORY C | SCENARIO 8: Stuck SSR Triac Detection [60s]",
                "Injection: UI=OFF  FLOW=0  TEMP=25C | Slave forces 13.6A (3000W) despite OFF",
@@ -100,6 +113,7 @@ void TaskAutomatedTestBench(void* pvParameters) {
         demo_set(25.0f, 0.0f, false, false, true);
         vTaskDelay(pdMS_TO_TICKS(60000));
         demo_set(25.0f, 0.0f, false, false, false);
+        DEMO_CHECK();
 
         Serial.println("\n[MASTER] ************************************************************");
         Serial.println("[MASTER] ***          DEMO CYCLE COMPLETE. Restart in 5s.         ***");
