@@ -133,12 +133,9 @@ static void sendCommand() {
 
     if (appMode == APP_MODE_DEMO) {
         pkt.cmdFlags    |= CMD_DEMO_ACTIVE;
-        if (demo_fault_sim) pkt.cmdFlags |= CMD_DEMO_FAULT_SIM;
-        pkt.demoTempX10  = (int16_t)(demo_temp * 10.0f);
-        pkt.demoFlowX10  = (uint16_t)(demo_flow * 10.0f);
-    } else {
-        pkt.demoTempX10 = 0;
-        pkt.demoFlowX10 = 0;
+        if (demo_fault_sim)       pkt.cmdFlags |= CMD_DEMO_FAULT_SIM;
+        if (demo_flow > 0.5f)     pkt.cmdFlags |= CMD_DEMO_FLOW;      // slave injects 6.5 L/min
+        if (demo_temp >= 80.0f)   pkt.cmdFlags |= CMD_DEMO_OVERTEMP;  // slave injects 87°C (S7)
     }
 
     pkt.crc8    = proto_cmd_crc(&pkt);

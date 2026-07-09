@@ -40,12 +40,11 @@ extern volatile bool system_fault;
 
 // ---------------------------------------------------------------------------
 //  Demo mode injected sensor values
-//  Written by plc_comms (from CMD demoTempX10/demoFlowX10 fields).
-//  Read by temp_task, flow_task, current_task when currentMode == MODE_DEMO.
+//  Written by plc_comms from CMD flag bits. Read by temp/flow tasks.
 // ---------------------------------------------------------------------------
-extern volatile int16_t  slave_demo_temp_x10;   ///< injected tank temp x10 from CMD
-extern volatile uint16_t slave_demo_flow_x10;   ///< injected flow x10 from CMD
-extern volatile bool     slave_demo_fault_sim;  ///< simulate stuck-SSR current (scenario 8)
+extern volatile bool     slave_demo_flow_active; ///< CMD_DEMO_FLOW  → inject 6.5 L/min
+extern volatile bool     slave_demo_overtemp;    ///< CMD_DEMO_OVERTEMP → inject 87°C (scenario 7)
+extern volatile bool     slave_demo_fault_sim;   ///< CMD_DEMO_FAULT_SIM → stuck-SSR current (scenario 8)
 
 // ---------------------------------------------------------------------------
 //  PLC watchdog — updated every time a valid CMD is received

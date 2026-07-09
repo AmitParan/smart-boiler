@@ -232,17 +232,19 @@ bool PLC_ReceivePacket() {
                                 }
                             }
 
-                            // Handle demo mode fields
+                            // Handle demo mode fields (flag-based, no extra payload bytes)
                             if (cmd->cmdFlags & CMD_DEMO_ACTIVE) {
-                                slave_demo_temp_x10  = cmd->demoTempX10;
-                                slave_demo_flow_x10  = cmd->demoFlowX10;
-                                slave_demo_fault_sim = (cmd->cmdFlags & CMD_DEMO_FAULT_SIM) != 0;
+                                slave_demo_flow_active = (cmd->cmdFlags & CMD_DEMO_FLOW)      != 0;
+                                slave_demo_overtemp    = (cmd->cmdFlags & CMD_DEMO_OVERTEMP)  != 0;
+                                slave_demo_fault_sim   = (cmd->cmdFlags & CMD_DEMO_FAULT_SIM) != 0;
                                 if (currentMode != MODE_DEMO) {
                                     currentMode = MODE_DEMO;
                                     Serial.println("[PLC] Mode set to DEMO by master");
                                 }
                             } else {
-                                slave_demo_fault_sim = false;
+                                slave_demo_flow_active = false;
+                                slave_demo_overtemp    = false;
+                                slave_demo_fault_sim   = false;
                                 if (currentMode == MODE_DEMO) {
                                     currentMode = MODE_PRODUCTION;
                                     Serial.println("[PLC] Mode restored to PRODUCTION");

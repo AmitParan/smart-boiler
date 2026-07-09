@@ -20,8 +20,8 @@ void TaskFlow(void * pvParameters) {
 
     for(;;) {
         if (currentMode == MODE_DEMO) {
-            // Mirror master-injected flow rate
-            float mock_flow = slave_demo_flow_x10 / 10.0f;
+            // CMD_DEMO_FLOW flag = simulate active water flow (6.5 L/min)
+            float mock_flow = slave_demo_flow_active ? 6.5f : 0.0f;
             if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
                 current_flow = mock_flow;
                 xSemaphoreGive(mutex_flow);
