@@ -49,9 +49,11 @@ void TaskCurrent(void * pvParameters) {
             float mock_rms;
             if (slave_demo_fault_sim) {
                 // Scenario 8: simulate stuck triac - report load even with cmds=0
-                mock_rms = 13.6f;
-            } else if (local_pwm_int > 0u || local_pwm_bst > 0u) {
-                mock_rms = 13.6f;   // active heater element at full load
+                mock_rms = 13.64f;  // 3000W / 220V
+            } else if (local_pwm_bst > 0u) {
+                mock_rms = 13.64f;  // SSR BOOST (external) = 3000W / 220V
+            } else if (local_pwm_int > 0u) {
+                mock_rms = 11.36f;  // SSR INT (internal)   = 2500W / 220V
             } else {
                 mock_rms = 0.0f;
             }
