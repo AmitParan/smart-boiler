@@ -15,8 +15,7 @@ void setup() {
     Serial.begin(115200);
     delay(500);
     Serial.println("=== SLAVE UNIT STARTED ===");
-    Serial.printf("[MODE] Default: %s  (send 'p' for PRODUCTION, 'b' for BENCH_TEST)\n",
-                  currentMode == MODE_BENCH_TEST ? "BENCH_TEST" : "PRODUCTION");
+    Serial.println("[MODE] Boot mode: BENCH_TEST | Will auto-switch to DEMO when master connects");
 
     // -----------------------------------------------------------------------
     //  Create FreeRTOS mutexes before any task starts.
