@@ -32,7 +32,6 @@ volatile bool     slave_demo_fault_sim   = false;
 // PLC watchdog
 volatile uint32_t last_cmd_received_ms = 0u;
 volatile bool     cmd_ever_received    = false;
-volatile bool     current_sensor_valid = false;
 volatile bool     current_sensor_valid = false;  // set true only when VREF is in spec
 
 // Spinlock for flow pulse counter ISR

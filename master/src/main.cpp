@@ -155,9 +155,26 @@ void loop() {
     static bool last_wifi_connected = false;
     static bool time_synced = false;
     static unsigned long last_ntp_sync = 0;
+    static unsigned long last_wifi_retry = 0;
     bool wifi_connected = (WiFi.status() == WL_CONNECTED);
 
+    // setup() only tries the saved network once — the ESP32 WiFi driver
+    // does not keep retrying on its own after that attempt fails. Retry
+    // periodically here so a boot-time miss (router still starting up,
+    // transient AP hiccup, etc.) or a later drop doesn't leave the device
+    // stuck offline until someone reconnects it by hand.
+    if (!wifi_connected && millis() - last_wifi_retry > 30000UL) {
+        last_wifi_retry = millis();
+        String saved_ssid, saved_password;
+        if (DataManager::loadWiFiCredentials(saved_ssid, saved_password)) {
+            Serial.printf("[WiFi] Not connected, retrying saved network: %s\n", saved_ssid.c_str());
+            WiFi.begin(saved_ssid.c_str(), saved_password.c_str());
+        }
+    }
+
     if (wifi_connected && !last_wifi_connected) {
+        Serial.println("[WiFi] Connected — disabling setup AP");
+        WiFi.softAPdisconnect(true);
         time_synced = syncTimeFromInternet();
         last_ntp_sync = millis();
     }

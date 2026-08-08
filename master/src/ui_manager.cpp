@@ -53,6 +53,7 @@ static lv_obj_t* page_password     = NULL;
 static lv_obj_t* page_stats        = NULL;
 static lv_obj_t* page_diagnostics  = NULL;
 static lv_obj_t* page_solar        = NULL;
+static lv_obj_t* page_wizard       = NULL;
 
 // ---------------------------------------------------------------------------
 //  Widget pointers — Home
@@ -123,6 +124,21 @@ static lv_obj_t* lbl_next_preheat   = NULL;
 static lv_obj_t* lbl_skip_btn       = NULL;
 
 // ---------------------------------------------------------------------------
+//  Widget pointers — Setup Wizard (first-time preferences, Settings-triggered)
+// ---------------------------------------------------------------------------
+static lv_obj_t* wiz_step_temp      = NULL;
+static lv_obj_t* wiz_step_household = NULL;
+static lv_obj_t* wiz_step_schedule  = NULL;
+static lv_obj_t* lbl_wiz_progress   = NULL;
+static lv_obj_t* lbl_wiz_temp       = NULL;
+static lv_obj_t* lbl_wiz_household  = NULL;
+static lv_obj_t* lbl_wiz_hh         = NULL;
+static lv_obj_t* lbl_wiz_mm         = NULL;
+static lv_obj_t* btn_wiz_back       = NULL;
+static lv_obj_t* btn_wiz_next       = NULL;
+static lv_obj_t* lbl_wiz_next_text  = NULL;
+
+// ---------------------------------------------------------------------------
 //  Widget pointers — Stats (live status) / Diagnostics
 // ---------------------------------------------------------------------------
 static lv_obj_t* lbl_stat_power = NULL;
@@ -144,7 +160,8 @@ static lv_obj_t* lbl_diag_tboost = NULL;
 static lv_obj_t* lbl_diag_flow   = NULL;
 static lv_obj_t* lbl_diag_power  = NULL;
 static lv_obj_t* lbl_diag_plc    = NULL;
-static lv_obj_t* lbl_diag_ssr    = NULL;
+static lv_obj_t* lbl_diag_heater_int   = NULL;
+static lv_obj_t* lbl_diag_heater_boost = NULL;
 static lv_obj_t* lbl_diag_rssi   = NULL;
 static lv_obj_t* lbl_diag_heap   = NULL;
 static lv_obj_t* lbl_diag_uptime = NULL;
@@ -189,6 +206,20 @@ static int  g_ready_hh[2]   = {7, 9};  // [0]=weekday [1]=weekend
 static int  g_ready_mm[2]   = {0, 0};
 static int  g_sched_day_idx = 0;
 static bool g_skip_today    = false;
+
+// Setup Wizard — working values for the in-progress step, plus the last
+// persisted household/ready-time preferences (loaded at boot, used to
+// prefill the wizard next time it's opened). target_temperature doubles
+// as both the live value and the persisted preference, so it isn't
+// duplicated here.
+static int  wizard_step      = 0;   // 0..2
+static int  wiz_temp         = 60;
+static int  wiz_household    = 2;
+static int  wiz_ready_hh     = 7;
+static int  wiz_ready_mm     = 0;
+static int  g_pref_household = 2;
+static int  g_pref_ready_hh  = 7;
+static int  g_pref_ready_mm  = 0;
 
 // ---------------------------------------------------------------------------
 //  Helpers
@@ -251,7 +282,8 @@ static int scanForNetworks() {
 // ---------------------------------------------------------------------------
 static void show_page(lv_obj_t* target) {
     lv_obj_t* pages[] = { page_home, page_settings, page_schedule, page_network,
-                          page_password, page_stats, page_diagnostics, page_solar };
+                          page_password, page_stats, page_diagnostics, page_solar,
+                          page_wizard };
     for (lv_obj_t* p : pages) {
         if (p == NULL) continue;
         if (p == target) lv_obj_clear_flag(p, LV_OBJ_FLAG_HIDDEN);
@@ -317,6 +349,47 @@ static lv_obj_t* make_header_title(lv_obj_t* header, const char* text) {
     lv_obj_set_style_text_color(lbl, lv_color_white(), 0);
     lv_obj_set_flex_grow(lbl, 1);
     return lbl;
+}
+
+// Small up/value/down column, e.g. household size or one half of a HH:MM
+// picker. Mirrors the stepper built inline in build_schedule_page().
+static lv_obj_t* make_value_stepper(lv_obj_t* parent, lv_event_cb_t up_cb, lv_event_cb_t dn_cb, lv_obj_t** out_lbl) {
+    lv_obj_t* col = lv_obj_create(parent);
+    disableScroll(col);
+    lv_obj_set_size(col, 70, 120);
+    lv_obj_set_style_bg_opa(col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(col, 0, 0);
+    lv_obj_set_style_pad_all(col, 0, 0);
+    lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(col, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* up = lv_btn_create(col);
+    lv_obj_set_size(up, 64, 40);
+    lv_obj_set_style_radius(up, 12, 0);
+    lv_obj_set_style_bg_color(up, lv_color_hex(0xE3F2FD), 0);
+    lv_obj_set_style_shadow_width(up, 0, 0);
+    lv_obj_add_event_cb(up, up_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* up_lbl = lv_label_create(up);
+    lv_label_set_text(up_lbl, LV_SYMBOL_UP);
+    lv_obj_set_style_text_color(up_lbl, CLR_ACCENT, 0);
+    lv_obj_center(up_lbl);
+
+    lv_obj_t* val = lv_label_create(col);
+    lv_label_set_text(val, "00");
+    lv_obj_set_style_text_font(val, &lv_font_montserrat_48, 0);
+    if (out_lbl) *out_lbl = val;
+
+    lv_obj_t* dn = lv_btn_create(col);
+    lv_obj_set_size(dn, 64, 40);
+    lv_obj_set_style_radius(dn, 12, 0);
+    lv_obj_set_style_bg_color(dn, lv_color_hex(0xE3F2FD), 0);
+    lv_obj_set_style_shadow_width(dn, 0, 0);
+    lv_obj_add_event_cb(dn, dn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* dn_lbl = lv_label_create(dn);
+    lv_label_set_text(dn_lbl, LV_SYMBOL_DOWN);
+    lv_obj_set_style_text_color(dn_lbl, CLR_ACCENT, 0);
+    lv_obj_center(dn_lbl);
+    return col;
 }
 
 static lv_obj_t* make_tile(lv_obj_t* parent, const char* icon, const char* text,
@@ -1196,6 +1269,105 @@ static void mode_toggle_cb(lv_event_t*) {
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 }
 
+// ---------------------------------------------------------------------------
+//  Setup Wizard — 3-step onboarding, entered from Settings
+// ---------------------------------------------------------------------------
+static void update_wizard_temp_label() {
+    if (lbl_wiz_temp == NULL) return;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d\xc2\xb0", wiz_temp);
+    lv_label_set_text(lbl_wiz_temp, buf);
+}
+static void wiz_temp_up_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp < 80) { wiz_temp += 5; update_wizard_temp_label(); } }
+static void wiz_temp_dn_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp > 30) { wiz_temp -= 5; update_wizard_temp_label(); } }
+
+static void update_wizard_household_label() {
+    if (lbl_wiz_household == NULL) return;
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d", wiz_household);
+    lv_label_set_text(lbl_wiz_household, buf);
+}
+static void wiz_household_up_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_household < 8) { wiz_household++; update_wizard_household_label(); } }
+static void wiz_household_dn_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_household > 1) { wiz_household--; update_wizard_household_label(); } }
+
+static void update_wizard_time_labels() {
+    char hb[4], mb[4];
+    snprintf(hb, sizeof(hb), "%02d", wiz_ready_hh);
+    snprintf(mb, sizeof(mb), "%02d", wiz_ready_mm);
+    if (lbl_wiz_hh != NULL) lv_label_set_text(lbl_wiz_hh, hb);
+    if (lbl_wiz_mm != NULL) lv_label_set_text(lbl_wiz_mm, mb);
+}
+static void wiz_hh_up_cb(lv_event_t*) { last_touch_time = millis(); wiz_ready_hh = (wiz_ready_hh + 1) % 24; update_wizard_time_labels(); }
+static void wiz_hh_dn_cb(lv_event_t*) { last_touch_time = millis(); wiz_ready_hh = (wiz_ready_hh + 23) % 24; update_wizard_time_labels(); }
+static void wiz_mm_up_cb(lv_event_t*) { last_touch_time = millis(); wiz_ready_mm = (wiz_ready_mm + 5) % 60; update_wizard_time_labels(); }
+static void wiz_mm_dn_cb(lv_event_t*) { last_touch_time = millis(); wiz_ready_mm = (wiz_ready_mm + 55) % 60; update_wizard_time_labels(); }
+
+static void update_wizard_step_ui() {
+    if (wiz_step_temp == NULL) return;
+    lv_obj_t* steps[] = { wiz_step_temp, wiz_step_household, wiz_step_schedule };
+    for (lv_obj_t* s : steps) lv_obj_add_flag(s, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(steps[wizard_step], LV_OBJ_FLAG_HIDDEN);
+
+    if (lbl_wiz_progress != NULL) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "Step %d of 3", wizard_step + 1);
+        lv_label_set_text(lbl_wiz_progress, buf);
+    }
+    if (btn_wiz_back != NULL) {
+        if (wizard_step == 0) lv_obj_add_flag(btn_wiz_back, LV_OBJ_FLAG_HIDDEN);
+        else                  lv_obj_clear_flag(btn_wiz_back, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (lbl_wiz_next_text != NULL) lv_label_set_text(lbl_wiz_next_text, wizard_step == 2 ? "Finish" : "Next");
+}
+
+static void wizard_finish_cb(lv_event_t*) {
+    last_touch_time = millis();
+    target_temperature = wiz_temp;
+    updateTargetLabels();
+    g_pref_household = wiz_household;
+    g_pref_ready_hh   = wiz_ready_hh;
+    g_pref_ready_mm   = wiz_ready_mm;
+    DataManager::saveSetting("target_temp",    wiz_temp);
+    DataManager::saveSetting("household_size", wiz_household);
+    DataManager::saveSetting("ready_hh",       wiz_ready_hh);
+    DataManager::saveSetting("ready_mm",       wiz_ready_mm);
+    wizard_step = 0;
+    update_wizard_step_ui();
+    show_page(page_home);
+}
+
+static void wizard_next_cb(lv_event_t* e) {
+    last_touch_time = millis();
+    if (wizard_step < 2) {
+        wizard_step++;
+        update_wizard_step_ui();
+    } else {
+        wizard_finish_cb(e);
+    }
+}
+
+static void wizard_back_cb(lv_event_t*) {
+    last_touch_time = millis();
+    if (wizard_step > 0) {
+        wizard_step--;
+        update_wizard_step_ui();
+    }
+}
+
+static void goto_wizard_cb(lv_event_t*) {
+    last_touch_time = millis();
+    wiz_temp      = target_temperature;
+    wiz_household = g_pref_household;
+    wiz_ready_hh  = g_pref_ready_hh;
+    wiz_ready_mm  = g_pref_ready_mm;
+    wizard_step   = 0;
+    update_wizard_temp_label();
+    update_wizard_household_label();
+    update_wizard_time_labels();
+    update_wizard_step_ui();
+    show_page(page_wizard);
+}
+
 static void build_settings_page(lv_obj_t* scr) {
     page_settings = lv_obj_create(scr);
     disableScroll(page_settings);
@@ -1319,6 +1491,7 @@ static void build_settings_page(lv_obj_t* scr) {
 
     make_settings_nav_btn(LV_SYMBOL_LIST, "Schedule", CLR_ACCENT, goto_schedule_cb);
     make_settings_nav_btn(LV_SYMBOL_EDIT, "Diagnostics", CLR_SUBTEXT, goto_diagnostics_cb);
+    make_settings_nav_btn(LV_SYMBOL_HOME, "Setup", CLR_ACCENT, goto_wizard_cb);
 
     // ---- Demo / Realtime mode toggle ----------------------------------------
     lv_obj_t* lbl_mode_title = lv_label_create(body);
@@ -1615,6 +1788,188 @@ static void build_schedule_page(lv_obj_t* scr) {
     update_time_labels();
 }
 
+static void build_wizard_page(lv_obj_t* scr) {
+    page_wizard = lv_obj_create(scr);
+    disableScroll(page_wizard);
+    lv_obj_set_size(page_wizard, 800, 480);
+    lv_obj_set_pos(page_wizard, 0, 0);
+    lv_obj_set_style_bg_color(page_wizard, CLR_BG, 0);
+    lv_obj_set_style_border_width(page_wizard, 0, 0);
+    lv_obj_set_style_radius(page_wizard, 0, 0);
+    lv_obj_set_style_pad_all(page_wizard, 0, 0);
+    lv_obj_add_flag(page_wizard, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* header = make_header(page_wizard, CLR_TOPBAR);
+    make_back_btn(header, page_settings);
+    make_header_title(header, LV_SYMBOL_HOME "  Setup Guide");
+
+    lbl_wiz_progress = lv_label_create(page_wizard);
+    lv_label_set_text(lbl_wiz_progress, "Step 1 of 3");
+    lv_obj_set_style_text_font(lbl_wiz_progress, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_wiz_progress, CLR_SUBTEXT, 0);
+    lv_obj_set_pos(lbl_wiz_progress, 22, 76);
+
+    lv_obj_t* body = lv_obj_create(page_wizard);
+    disableScroll(body);
+    lv_obj_set_size(body, 800, 300);
+    lv_obj_set_pos(body, 0, 106);
+    lv_obj_set_style_bg_opa(body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(body, 0, 0);
+    lv_obj_set_style_pad_all(body, 22, 0);
+
+    // ---- Step 1: Target temperature ----
+    wiz_step_temp = lv_obj_create(body);
+    disableScroll(wiz_step_temp);
+    lv_obj_set_size(wiz_step_temp, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(wiz_step_temp, 0, 0);
+    lv_obj_set_style_bg_opa(wiz_step_temp, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wiz_step_temp, 0, 0);
+    lv_obj_set_style_pad_all(wiz_step_temp, 0, 0);
+
+    lv_obj_t* t_title = lv_label_create(wiz_step_temp);
+    lv_label_set_text(t_title, "What temperature do you want your water at, day to day?");
+    lv_obj_set_style_text_font(t_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(t_title, CLR_TEXT, 0);
+    lv_obj_set_width(t_title, lv_pct(100));
+    lv_label_set_long_mode(t_title, LV_LABEL_LONG_WRAP);
+    lv_obj_align(t_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t* t_row = lv_obj_create(wiz_step_temp);
+    disableScroll(t_row);
+    lv_obj_set_size(t_row, 460, 130);
+    lv_obj_align(t_row, LV_ALIGN_TOP_MID, 0, 80);
+    lv_obj_set_style_bg_color(t_row, lv_color_white(), 0);
+    lv_obj_set_style_border_width(t_row, 2, 0);
+    lv_obj_set_style_border_color(t_row, CLR_BORDER, 0);
+    lv_obj_set_style_radius(t_row, 24, 0);
+    lv_obj_set_style_pad_hor(t_row, 20, 0);
+    lv_obj_set_flex_flow(t_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(t_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t* t_dn = lv_btn_create(t_row);
+    lv_obj_set_size(t_dn, 92, 92);
+    lv_obj_set_style_radius(t_dn, 22, 0);
+    lv_obj_set_style_bg_color(t_dn, CLR_BORDER, 0);
+    lv_obj_add_event_cb(t_dn, wiz_temp_dn_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* t_dn_lbl = lv_label_create(t_dn);
+    lv_label_set_text(t_dn_lbl, LV_SYMBOL_MINUS);
+    lv_obj_set_style_text_font(t_dn_lbl, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(t_dn_lbl, CLR_TEXT, 0);
+    lv_obj_center(t_dn_lbl);
+
+    lbl_wiz_temp = lv_label_create(t_row);
+    lv_label_set_text(lbl_wiz_temp, "60\xc2\xb0");
+    lv_obj_set_style_text_font(lbl_wiz_temp, &lv_font_montserrat_48, 0);
+    lv_obj_set_style_text_color(lbl_wiz_temp, CLR_ACCENT, 0);
+
+    lv_obj_t* t_up = lv_btn_create(t_row);
+    lv_obj_set_size(t_up, 92, 92);
+    lv_obj_set_style_radius(t_up, 22, 0);
+    lv_obj_set_style_bg_color(t_up, CLR_ACCENT, 0);
+    lv_obj_add_event_cb(t_up, wiz_temp_up_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_t* t_up_lbl = lv_label_create(t_up);
+    lv_label_set_text(t_up_lbl, LV_SYMBOL_PLUS);
+    lv_obj_set_style_text_font(t_up_lbl, &lv_font_montserrat_32, 0);
+    lv_obj_set_style_text_color(t_up_lbl, lv_color_white(), 0);
+    lv_obj_center(t_up_lbl);
+
+    // ---- Step 2: Household size ----
+    wiz_step_household = lv_obj_create(body);
+    disableScroll(wiz_step_household);
+    lv_obj_set_size(wiz_step_household, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(wiz_step_household, 0, 0);
+    lv_obj_set_style_bg_opa(wiz_step_household, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wiz_step_household, 0, 0);
+    lv_obj_set_style_pad_all(wiz_step_household, 0, 0);
+    lv_obj_add_flag(wiz_step_household, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* h_title = lv_label_create(wiz_step_household);
+    lv_label_set_text(h_title, "How many people use hot water daily?");
+    lv_obj_set_style_text_font(h_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(h_title, CLR_TEXT, 0);
+    lv_obj_set_width(h_title, lv_pct(100));
+    lv_label_set_long_mode(h_title, LV_LABEL_LONG_WRAP);
+    lv_obj_align(h_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t* h_card = lv_obj_create(wiz_step_household);
+    disableScroll(h_card);
+    lv_obj_set_size(h_card, 220, 160);
+    lv_obj_align(h_card, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_style_bg_color(h_card, lv_color_white(), 0);
+    lv_obj_set_style_border_width(h_card, 2, 0);
+    lv_obj_set_style_border_color(h_card, CLR_BORDER, 0);
+    lv_obj_set_style_radius(h_card, 20, 0);
+    lv_obj_set_flex_flow(h_card, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(h_card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    make_value_stepper(h_card, wiz_household_up_cb, wiz_household_dn_cb, &lbl_wiz_household);
+
+    // ---- Step 3: Ready-by time ----
+    wiz_step_schedule = lv_obj_create(body);
+    disableScroll(wiz_step_schedule);
+    lv_obj_set_size(wiz_step_schedule, lv_pct(100), lv_pct(100));
+    lv_obj_set_pos(wiz_step_schedule, 0, 0);
+    lv_obj_set_style_bg_opa(wiz_step_schedule, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wiz_step_schedule, 0, 0);
+    lv_obj_set_style_pad_all(wiz_step_schedule, 0, 0);
+    lv_obj_add_flag(wiz_step_schedule, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* s_title = lv_label_create(wiz_step_schedule);
+    lv_label_set_text(s_title, "What time should hot water be ready by, by default?");
+    lv_obj_set_style_text_font(s_title, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(s_title, CLR_TEXT, 0);
+    lv_obj_set_width(s_title, lv_pct(100));
+    lv_label_set_long_mode(s_title, LV_LABEL_LONG_WRAP);
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lv_obj_t* s_card = lv_obj_create(wiz_step_schedule);
+    disableScroll(s_card);
+    lv_obj_set_size(s_card, 260, 160);
+    lv_obj_align(s_card, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_style_bg_color(s_card, lv_color_white(), 0);
+    lv_obj_set_style_border_width(s_card, 2, 0);
+    lv_obj_set_style_border_color(s_card, CLR_BORDER, 0);
+    lv_obj_set_style_radius(s_card, 20, 0);
+    lv_obj_set_flex_flow(s_card, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(s_card, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    make_value_stepper(s_card, wiz_hh_up_cb, wiz_hh_dn_cb, &lbl_wiz_hh);
+    lv_obj_t* colon = lv_label_create(s_card);
+    lv_label_set_text(colon, ":");
+    lv_obj_set_style_text_font(colon, &lv_font_montserrat_42, 0);
+    lv_obj_set_style_text_color(colon, CLR_SUBTEXT, 0);
+    make_value_stepper(s_card, wiz_mm_up_cb, wiz_mm_dn_cb, &lbl_wiz_mm);
+
+    // ---- Footer nav (Back / Next-Finish) ----
+    btn_wiz_back = lv_btn_create(page_wizard);
+    lv_obj_set_size(btn_wiz_back, 140, 56);
+    lv_obj_set_pos(btn_wiz_back, 22, 406);
+    lv_obj_set_style_radius(btn_wiz_back, 16, 0);
+    lv_obj_set_style_bg_color(btn_wiz_back, lv_color_white(), 0);
+    lv_obj_set_style_border_width(btn_wiz_back, 2, 0);
+    lv_obj_set_style_border_color(btn_wiz_back, CLR_BORDER, 0);
+    lv_obj_set_style_shadow_width(btn_wiz_back, 0, 0);
+    lv_obj_add_event_cb(btn_wiz_back, wizard_back_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_flag(btn_wiz_back, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t* back_lbl = lv_label_create(btn_wiz_back);
+    lv_label_set_text(back_lbl, LV_SYMBOL_LEFT "  Back");
+    lv_obj_set_style_text_font(back_lbl, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(back_lbl, CLR_TEXT, 0);
+    lv_obj_center(back_lbl);
+
+    btn_wiz_next = lv_btn_create(page_wizard);
+    lv_obj_set_size(btn_wiz_next, 180, 56);
+    lv_obj_set_pos(btn_wiz_next, 598, 406);
+    lv_obj_set_style_radius(btn_wiz_next, 16, 0);
+    lv_obj_set_style_bg_color(btn_wiz_next, CLR_ACCENT, 0);
+    lv_obj_set_style_border_width(btn_wiz_next, 0, 0);
+    lv_obj_add_event_cb(btn_wiz_next, wizard_next_cb, LV_EVENT_CLICKED, NULL);
+    lbl_wiz_next_text = lv_label_create(btn_wiz_next);
+    lv_label_set_text(lbl_wiz_next_text, "Next");
+    lv_obj_set_style_text_font(lbl_wiz_next_text, &lv_font_montserrat_18, 0);
+    lv_obj_set_style_text_color(lbl_wiz_next_text, lv_color_white(), 0);
+    lv_obj_center(lbl_wiz_next_text);
+}
+
 static void build_network_page(lv_obj_t* scr) {
     page_network = lv_obj_create(scr);
     disableScroll(page_network);
@@ -1838,7 +2193,7 @@ static void build_stats_page(lv_obj_t* scr) {
     lv_label_set_long_mode(lbl_system_mode, LV_LABEL_LONG_DOT);
     lbl_stat_power  = make_stat_card(row1, "Power now", lv_palette_main(LV_PALETTE_ORANGE));
     lbl_stat_flow   = make_stat_card(row1, "Flow now", CLR_ACCENT);
-    lbl_stat_plc    = make_stat_card(row1, "PLC Link", lv_palette_main(LV_PALETTE_RED));
+    lbl_stat_plc    = make_stat_card(row1, "Communication", lv_palette_main(LV_PALETTE_RED));
 
     lv_obj_t* progress_card = lv_obj_create(page_stats);
     disableScroll(progress_card);
@@ -1975,42 +2330,58 @@ static void build_diagnostics_page(lv_obj_t* scr) {
     lv_obj_set_style_border_width(grid, 0, 0);
     lv_obj_set_style_pad_all(grid, 0, 0);
     static lv_coord_t col_dsc[] = {248, 248, 248, LV_GRID_TEMPLATE_LAST};
-    static lv_coord_t row_dsc[] = {120, 120, 120, LV_GRID_TEMPLATE_LAST};
+    static lv_coord_t row_dsc[] = {88, 88, 88, 88, LV_GRID_TEMPLATE_LAST};
     lv_obj_set_grid_dsc_array(grid, col_dsc, row_dsc);
     lv_obj_set_layout(grid, LV_LAYOUT_GRID);
     lv_obj_set_style_pad_column(grid, 12, 0);
-    lv_obj_set_style_pad_row(grid, 12, 0);
+    lv_obj_set_style_pad_row(grid, 10, 0);
 
-    auto place = [&](lv_obj_t* card_value_owner, int col, int row) {
+    auto place = [&](lv_obj_t* card_value_owner, int col, int col_span, int row) {
         lv_obj_t* card = lv_obj_get_parent(card_value_owner);
-        lv_obj_set_grid_cell(card, LV_GRID_ALIGN_STRETCH, col, 1, LV_GRID_ALIGN_STRETCH, row, 1);
+        lv_obj_set_grid_cell(card, LV_GRID_ALIGN_STRETCH, col, col_span, LV_GRID_ALIGN_STRETCH, row, 1);
     };
 
     lbl_diag_tint   = make_diag_card(grid, "T internal", lv_color_hex(0x4FC3F7));
-    place(lbl_diag_tint, 0, 0);
+    place(lbl_diag_tint, 0, 1, 0);
     lbl_diag_tboost = make_diag_card(grid, "T boost out", lv_color_hex(0x4FC3F7));
-    place(lbl_diag_tboost, 1, 0);
+    place(lbl_diag_tboost, 1, 1, 0);
     lbl_diag_flow   = make_diag_card(grid, "Flow", lv_color_hex(0x81C784));
-    place(lbl_diag_flow, 2, 0);
+    place(lbl_diag_flow, 2, 1, 0);
     lbl_diag_power  = make_diag_card(grid, "Power", lv_color_hex(0xFFB74D));
-    place(lbl_diag_power, 0, 1);
-    lbl_diag_plc    = make_diag_card(grid, "PLC", lv_color_hex(0xE57373));
-    place(lbl_diag_plc, 1, 1);
-    lbl_diag_ssr    = make_diag_card(grid, "SSR int/boost", lv_color_hex(0xB0BEC5));
-    place(lbl_diag_ssr, 2, 1);
+    place(lbl_diag_power, 0, 1, 1);
+    lbl_diag_plc    = make_diag_card(grid, "Communication", lv_color_hex(0xE57373));
+    place(lbl_diag_plc, 1, 1, 1);
+    lbl_diag_heater_int   = make_diag_card(grid, "Heater Internal", lv_color_hex(0xB0BEC5));
+    place(lbl_diag_heater_int, 2, 1, 1);
+    lbl_diag_heater_boost = make_diag_card(grid, "Heater Boost", lv_color_hex(0xB0BEC5));
+    place(lbl_diag_heater_boost, 0, 1, 2);
     lbl_diag_rssi   = make_diag_card(grid, "WiFi RSSI", lv_color_hex(0xB0BEC5));
-    place(lbl_diag_rssi, 0, 2);
-    lbl_diag_heap   = make_diag_card(grid, "Free heap", lv_color_hex(0xB0BEC5));
-    place(lbl_diag_heap, 1, 2);
+    place(lbl_diag_rssi, 1, 1, 2);
+    lbl_diag_heap   = make_diag_card(grid, "Free memory", lv_color_hex(0xB0BEC5));
+    place(lbl_diag_heap, 2, 1, 2);
     lbl_diag_uptime = make_diag_card(grid, "Uptime", lv_color_hex(0xB0BEC5));
-    place(lbl_diag_uptime, 2, 2);
+    place(lbl_diag_uptime, 0, 3, 3);
 }
 
 // ===========================================================================
 //  UI_Init  —  800 x 480, 7 pages (Home / Settings / Schedule / Network /
 //  Password / Stats / Diagnostics), one shown at a time via show_page().
 // ===========================================================================
+// Loads preferences saved by a previous run of the Setup Wizard (SPIFFS is
+// already mounted by DataManager::init(), which runs before UI_Init() in
+// main.cpp's setup()). Falls back to the compiled-in defaults if no wizard
+// has been completed yet.
+static void load_saved_preferences() {
+    int v;
+    if (DataManager::loadSetting("target_temp", v))    target_temperature = v;
+    if (DataManager::loadSetting("household_size", v)) g_pref_household   = v;
+    if (DataManager::loadSetting("ready_hh", v))        g_pref_ready_hh    = v;
+    if (DataManager::loadSetting("ready_mm", v))        g_pref_ready_mm    = v;
+}
+
 void UI_Init() {
+    load_saved_preferences();
+
     Board* board = new Board();
     board->init();
     board->begin();
@@ -2024,6 +2395,7 @@ void UI_Init() {
     build_home_page(scr);
     build_settings_page(scr);
     build_schedule_page(scr);
+    build_wizard_page(scr);
     build_network_page(scr);
     build_password_page(scr);
     build_stats_page(scr);
@@ -2157,10 +2529,15 @@ void UI_UpdateSystemMode(const char* mode) {
 
 void UI_UpdateSSRStatus(bool internal_on, bool boost_on) {
     if (lvgl_port_lock(UI_REFRESH_RATE)) {
-        if (lbl_diag_ssr != NULL) {
-            char buf[20];
-            snprintf(buf, sizeof(buf), "%s/%s", internal_on ? "on" : "off", boost_on ? "on" : "off");
-            lv_label_set_text(lbl_diag_ssr, buf);
+        if (lbl_diag_heater_int != NULL) {
+            lv_label_set_text(lbl_diag_heater_int, internal_on ? "ON" : "OFF");
+            lv_obj_set_style_text_color(lbl_diag_heater_int,
+                internal_on ? lv_color_hex(0x81C784) : lv_color_hex(0xB0BEC5), 0);
+        }
+        if (lbl_diag_heater_boost != NULL) {
+            lv_label_set_text(lbl_diag_heater_boost, boost_on ? "ON" : "OFF");
+            lv_obj_set_style_text_color(lbl_diag_heater_boost,
+                boost_on ? lv_color_hex(0x81C784) : lv_color_hex(0xB0BEC5), 0);
         }
         lvgl_port_unlock();
     }
