@@ -1,0 +1,8 @@
+﻿# MATLAB / Simulink build & cache artifacts
+slprj/
+*.slxc
+*.autosave
+*.asv
+*.slx.r*
+old/
+figures/old/
