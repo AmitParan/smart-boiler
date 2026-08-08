@@ -103,9 +103,9 @@ main.cpp
   ├── TaskSafety       — priority 4 — runs every 50ms, mutex snapshot, hard-cuts SSRs on fault
   ├── TaskPWM_Internal — priority 3 — mutex snapshot of cmd at burst cycle start
   ├── TaskPWM_Boost    — priority 3 — mutex snapshot of cmd+flow, runtime mode check
-  ├── TaskFlow         — priority 2 — pulse counter ISR, mutex_flow protects write
-  ├── TaskTemp         — priority 2 — DS18B20 readings, mutex_temps protects write
-  ├── TaskCurrent      — priority 2 — ACS758 RMS sampling, mutex_current protects write
+  ├── TaskFlow         — priority 2 — pulse counter ISR, guard_flow protects write
+  ├── TaskTemp         — priority 2 — DS18B20 readings, guard_temps protects write
+  ├── TaskCurrent      — priority 2 — ACS758 RMS sampling, guard_current protects write
   ├── TaskPLC          — priority 2 — triggered: send STATUS after CMD received (200ms guard)
   └── TaskSerial       — priority 1 — serial console: 'b'=BENCH_TEST 'p'=PRODUCTION '?'=status
 ```
@@ -113,10 +113,10 @@ main.cpp
 **FreeRTOS mutex layout** (created in `setup()` before any task starts):
 | Mutex | Guards |
 |---|---|
-| `mutex_temps` | `temps[3]` — written by TaskTemp, read by TaskPLC + TaskSafety |
-| `mutex_flow` | `current_flow` — written by TaskFlow, read by TaskPLC + TaskSafety + TaskPWM_Boost |
-| `mutex_current` | `current_rms`, `power_watts` — written by TaskCurrent, read by TaskPLC + TaskSafety |
-| `mutex_cmd` | `cmd_pwm_internal/boost/flags` — written by TaskPLC, read by TaskPWM + TaskSafety |
+| `guard_temps` | `temps[3]` — written by TaskTemp, read by TaskPLC + TaskSafety |
+| `guard_flow` | `current_flow` — written by TaskFlow, read by TaskPLC + TaskSafety + TaskPWM_Boost |
+| `guard_current` | `current_rms`, `power_watts` — written by TaskCurrent, read by TaskPLC + TaskSafety |
+| `guard_cmd` | `cmd_pwm_internal/boost/flags` — written by TaskPLC, read by TaskPWM + TaskSafety |
 
 **TaskPLC communication pattern** (half-duplex KQ-330):
 ```
@@ -262,18 +262,20 @@ Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C
 
 ### 6.4 Automated 8-Scenario Test Bench
 
-`TaskAutomatedTestBench` runs on Core 1 and cycles through 8 scenarios automatically (60s each). Starts 6s after boot, only executes when `APP_MODE_DEMO`.
+`TaskAutomatedTestBench` runs on Core 1 and cycles through 8 scenarios automatically (~60s each). Starts 6s after boot, only executes when `APP_MODE_DEMO`. Values and intra-scenario timings are aligned to the authoritative MATLAB models in `Models/Models/` (`Scenario_1..8`, `boiler_params.m`).
 
 | # | Category | Scenario | Temp | Flow | Expected State | SSR Int | SSR Boost |
 |---|---|---|---|---|---|:---:|:---:|
-| S1 | A | Pre-Heating | 25°C | 0 | STATE_HEATING_TANK | **ON** | OFF |
-| S2 | A | Cold Shower | 35°C | 6.5 | STATE_SHOWER_BOOST | OFF | **ON** |
-| S3 | A | Warm Shower Cutoff | 46°C | 6.5 | STATE_SHOWER_BOOST | OFF | OFF |
+| S1 | A | Pre-Heating | 20°C | 0 | STATE_HEATING_TANK | **ON** | OFF |
+| S2 | A | Preheated Shower | 40°C | 8 @ t=30s | STATE_SHOWER_BOOST | OFF | **ON** |
+| S3 | A | Warm Shower Cutoff | 45°C | 8 @ t=30s | STATE_SHOWER_BOOST | OFF | OFF |
 | S4 | A | Standby | 42°C | 0 | STATE_STANDBY | OFF | OFF |
 | S5 | B | Solar Bypass | 28→42°C | 0 | STANDBY (forced) | OFF | OFF |
-| S6 | C | PLC Loss | — | — | SAFETY_OVERRIDE | OFF | OFF |
-| S7 | C | Overtemp | 75→87°C | 0 | SAFETY_OVERRIDE | OFF | OFF |
-| S8 | C | Stuck SSR | 25°C | 0 | FAULT (0x08) | OFF | OFF |
+| S6 | C | PLC Loss | 20°C | 0 | SAFETY_OVERRIDE | OFF | OFF |
+| S7 | C | Overtemp | 70→86°C | 0 | SAFETY_OVERRIDE | OFF | OFF |
+| S8 | C | Stuck SSR | 70°C | 0 | FAULT (0x08) | OFF | OFF |
+
+> S6 timeline: idle 0–15s → heating 15–30s → PLC link cut at t=30s. S7 ramps from 70°C at 0.4°C/s (software cutoff 80°C ≈ t+25s, HW interlock 85°C ≈ t+37.5s).
 
 ### 6.5 Demo Serial Log Format
 
@@ -303,17 +305,17 @@ Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C
 | Demo / Realtime mode toggle | ✅ WORKS | Settings page "Switch" button |
 | 8-scenario automated test bench | ✅ WORKS | Runs on Core 1, 60s per scenario |
 | S1 Pre-Heating (SSR INT ON) | ✅ WORKS | 2500W confirmed |
-| S2 Cold Shower (SSR EXT ON) | ✅ WORKS | 3000W confirmed |
-| S3 Warm Shower Boost Cutoff | ✅ WORKS | Both SSRs off at 46°C |
+| S2 Preheated Shower (SSR EXT ON) | ✅ WORKS | 3000W confirmed |
+| S3 Warm Shower Boost Cutoff | ✅ WORKS | Both SSRs off at 45°C |
 | S4 Standby | ✅ WORKS | 0W confirmed |
 | S5 Solar Bypass (forced 0W) | ✅ WORKS | 28→42°C sweep, SSRs stay off via override |
 | S6 PLC Loss watchdog | ✅ WORKS | Slave safety trips after 5s, auto-clears in demo |
-| S7 Overtemp cutoff | ✅ WORKS | Software @80°C, HW interlock sim @86°C |
+| S7 Overtemp cutoff | ✅ WORKS | Software @80°C, HW interlock sim @85°C |
 | S8 Stuck SSR detection | ✅ WORKS | Uncommanded current fault within 50ms |
 | UI power button locked in demo | ✅ WORKS | Cannot toggle boiler during demo |
 | Mock power values | ✅ WORKS | SSR_INT=2500W (11.36A), SSR_BOOST=3000W (13.64A) |
 | SystemMode runtime (slave) | ✅ WORKS | d=DEMO, r=REALTIME serial commands + auto via CMD_DEMO_ACTIVE |
-| FreeRTOS mutexes (4 guards) | ✅ WORKS | mutex_temps/flow/current/cmd |
+| FreeRTOS mutexes (4 guards) | ✅ WORKS | guard_temps/flow/current/cmd |
 | TaskMasterComms on Core 0 | ✅ WORKS | Isolated from LVGL (Core 1), no preemption |
 | KQ-330 timing locked | ✅ WORKS | 2ms/byte TX + 200ms guard — DO NOT CHANGE |
 | WiFi + NTP sync | ✅ WORKS | Auto-reconnect, time shown on dashboard |
@@ -337,10 +339,11 @@ Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C
 **Root cause:** `inputs.plcConnected = true` is hardcoded in `sendCommand()`.  
 **Proper fix needed:** Track last received STATUS timestamp; set `plcConnected = false` if no STATUS received in >5 seconds.
 
-### BUG-3: SSR LEDC duty 127 = 50% carrier (pwm_task_internal.cpp, pwm_task_boost.cpp)
-**Symptom:** SSR fires on only ~50% of AC half-cycles. Load gets reduced power. Small LED loads may not light at all due to SSR triac holding current minimum.  
-**Note:** This is OK for the real boiler element (resistive, high current). For a test LED, use an incandescent bulb or resistive load instead.  
-**Future fix option:** Change from LEDC PWM to plain `digitalWrite(HIGH/LOW)` for clean DC control during ON window. LEDC is unnecessary — the time-proportional control is already at the task level (on_ms/off_ms).
+### NOTE (was BUG-3): SSR LEDC 1 kHz carrier is REQUIRED by the hardware watchdog (pwm_task_internal.cpp, pwm_task_boost.cpp)
+The internal/boost SSR gate is a **DC-blocking capacitive watchdog** (project book §9.1.9, "Internal/External Watchdog Gate"): it latches only while it receives a continuous high-frequency pulse train, and treats a constant DC level as a controller-freeze fault, cutting the heater within ~1s (RC τ≈1s).  
+**Therefore `ledcWrite(pin, 127)` @ 1 kHz is mandatory, not a defect** — it supplies that carrier.  
+**⚠️ DO NOT** replace it with `digitalWrite(HIGH)`: constant DC would trip the hardware watchdog and the heater could never sustain ON. The earlier "replace LEDC with digitalWrite" (SW-3) suggestion is **retracted**.  
+**Side effect (accepted):** a zero-crossing SSR driven at 1 kHz fires on ~50% of AC half-cycles, so tiny LED test loads (below triac holding current) may not light. The real resistive boiler element works correctly. For bench LED tests use a 40W+ incandescent/resistive load.
 
 ### LIMITATION: 9W LED is not a valid SSR test load
 Zero-crossing SSRs require a minimum holding current (typically 50–200mA). A 9W 220V LED draws only ~40mA. The triac drops out every zero crossing. Use a 40W+ incandescent bulb or the real boiler element for testing.
@@ -364,7 +367,7 @@ Before writing more code, confirm these hardware items work:
 ### Phase 2: Software Bug Fixes
 - [ ] **SW-1** Fix BUG-2: implement PLC watchdog in comms_master.cpp — set `plcConnected = false` after 5 seconds with no STATUS received
 - [ ] **SW-2** Fix BUG-1: add VREF sanity clamp in `current_task.cpp` AND drive SSR pins LOW explicitly before calibration starts
-- [ ] **SW-3** Fix BUG-3: replace `ledcWrite(pin, 127)` with plain `digitalWrite(HIGH)` during ON window in both PWM tasks — LEDC is not needed
+- [x] **SW-3** ❌ REJECTED — do NOT replace `ledcWrite(pin, 127)` with `digitalWrite(HIGH)`. The 1 kHz carrier is required by the DC-blocking hardware watchdog gate (see NOTE "was BUG-3"). Constant DC would trip the interlock and cut the heater. Closed, no action.
 - [ ] **SW-4** Add `system_fault` reset mechanism (e.g. CMD_EMERGENCY_STOP cleared = reset fault) so recovery doesn't require hardware reboot
 - [ ] **SW-5** Increase current noise floor for real boiler: change `0.2f` threshold to match actual noise profile after real load testing
 
