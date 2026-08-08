@@ -222,6 +222,35 @@ static int  g_pref_ready_hh  = 7;
 static int  g_pref_ready_mm  = 0;
 
 // ---------------------------------------------------------------------------
+//  Smart-preheat interface — exposes the Schedule-page operation state to the
+//  SmartPreheat brain (smart_preheat.cpp), so the three UI modes drive real
+//  heating behaviour instead of being a front-end placeholder.
+// ---------------------------------------------------------------------------
+#include <time.h>
+
+uint8_t UI_GetOpMode() {
+    if (!g_auto_enabled) return 0;        // OP_DUMB — auto disabled (plain reactive)
+    return g_smart_learn ? 2 : 1;         // OP_SMART : OP_READY_BY
+}
+
+uint16_t UI_GetReadyByMinute() {
+    // Weekday/weekend ready-by time (Israel weekend = Fri/Sat). Falls back to
+    // the weekday value when the clock is not synced yet.
+    int idx = 0;
+    time_t now = time(nullptr);
+    if (now > 100000) {
+        struct tm tmv;
+        localtime_r(&now, &tmv);
+        if (tmv.tm_wday == 5 || tmv.tm_wday == 6) idx = 1;
+    }
+    return (uint16_t)(g_ready_hh[idx] * 60 + g_ready_mm[idx]);
+}
+
+uint8_t UI_GetHouseholdSize() {
+    return (uint8_t)g_pref_household;
+}
+
+// ---------------------------------------------------------------------------
 //  Helpers
 // ---------------------------------------------------------------------------
 static bool stationConnected() { return WiFi.status() == WL_CONNECTED; }

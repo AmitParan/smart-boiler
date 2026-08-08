@@ -6,6 +6,7 @@
 #define LOGS_FILE "/logs.json"
 #define MAX_LOG_ENTRIES 50  // Keep it small
 #define WATER_USAGE_FILE "/water_usage.json"
+#define PREHEAT_FILE "/preheat.json"
 
 void DataManager::init() {
     if (!SPIFFS.begin(true)) {
@@ -288,6 +289,47 @@ bool DataManager::loadWaterUsage(int& dayOfYear, float* hourlyLiters, float* hou
     JsonArray temps  = doc["temps"].as<JsonArray>();
     for (int i = 0; i < hours && i < (int)liters.size(); i++) hourlyLiters[i] = liters[i];
     for (int i = 0; i < hours && i < (int)temps.size();  i++) hourlyTemps[i]  = temps[i];
+    return true;
+}
+
+// ==================== Smart-Preheat Histogram ====================
+bool DataManager::savePreheat(const uint16_t* counts, int slots, uint16_t total, uint16_t days, int16_t lastYday) {
+    DynamicJsonDocument doc(2048);
+    doc["total"]    = total;
+    doc["days"]     = days;
+    doc["lastYday"] = lastYday;
+
+    JsonArray arr = doc.createNestedArray("slots");
+    for (int i = 0; i < slots; i++) arr.add(counts[i]);
+
+    File file = SPIFFS.open(PREHEAT_FILE, "w");
+    if (!file) {
+        Serial.println("Failed to open preheat file for writing");
+        return false;
+    }
+    serializeJson(doc, file);
+    file.close();
+    return true;
+}
+
+bool DataManager::loadPreheat(uint16_t* counts, int slots, uint16_t& total, uint16_t& days, int16_t& lastYday) {
+    for (int i = 0; i < slots; i++) counts[i] = 0;
+    total = 0; days = 0; lastYday = -1;
+
+    if (!SPIFFS.exists(PREHEAT_FILE)) return false;
+
+    File file = SPIFFS.open(PREHEAT_FILE, "r");
+    DynamicJsonDocument doc(2048);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error || !doc.containsKey("slots")) return false;
+
+    total    = doc["total"]    | 0;
+    days     = doc["days"]     | 0;
+    lastYday = doc["lastYday"] | -1;
+    JsonArray arr = doc["slots"].as<JsonArray>();
+    for (int i = 0; i < slots && i < (int)arr.size(); i++) counts[i] = arr[i];
     return true;
 }
 

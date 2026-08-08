@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include "ui_manager.h"
 #include "DataManager.h"
+#include "smart_preheat.h"
 #include "SystemManagerTest.h"
 #include "app_mode.h"
 #include "demo_scenarios.h"
@@ -81,6 +82,8 @@ void setup() {
     
     // 0. Initialize data storage (SPIFFS)
     DataManager::init();
+    // Load the smart-preheat learning history (must come after SPIFFS is up).
+    SmartPreheat::init();
     WiFi.persistent(false);
     WiFi.setSleep(false);
 

@@ -31,6 +31,10 @@ public:
     // Water usage tracking (Stats page): 24 hourly buckets for one day
     static bool saveWaterUsage(int dayOfYear, const float* hourlyLiters, const float* hourlyTemps, int hours);
     static bool loadWaterUsage(int& dayOfYear, float* hourlyLiters, float* hourlyTemps, int hours);
+
+    // Smart-preheat learning histogram (SmartPreheat brain)
+    static bool savePreheat(const uint16_t* counts, int slots, uint16_t total, uint16_t days, int16_t lastYday);
+    static bool loadPreheat(uint16_t* counts, int slots, uint16_t& total, uint16_t& days, int16_t& lastYday);
     
     // Utility
     static void printStorageInfo();

@@ -4,6 +4,8 @@
 #include "ui_manager.h"
 #include "SystemManager.h"
 #include "app_mode.h"
+#include "smart_preheat.h"
+#include <time.h>
 
 // Access UI state set by the user on the touch screen (defined in ui_manager.cpp)
 extern bool boiler_state;
@@ -71,6 +73,16 @@ static void processStatusPacket(const uint8_t* raw) {
     last_flow       = flow;
     last_power_w    = power_w;
 
+    // Smart brain: learn real shower times. A shower is the tap opening, i.e.
+    // flow crossing the boost threshold from ~0. Only in REALTIME (real usage).
+    if (appMode == MODE_REALTIME) {
+        static float prev_flow_edge = 0.0f;
+        if (prev_flow_edge < 1.0f && flow >= 1.0f) {
+            SmartPreheat::recordShower((uint32_t)time(nullptr));
+        }
+        prev_flow_edge = flow;
+    }
+
     // Demo mode: event-driven slave fault banner (logged ONCE per fault event)
     if (appMode == MODE_DEMO) {
         static bool slave_fault_banner_shown = false;
@@ -123,8 +135,27 @@ static void sendCommand() {
     } else {
         inputs.currentTemp  = last_t_internal;
         inputs.flowRateLPM  = last_flow;
-        inputs.uiStateOn    = boiler_state;
         inputs.plcConnected = true;
+
+        // Smart brain: run the preheat decision tree ~every 60 s. It may request
+        // heating ahead of a scheduled/predicted shower. It never overrides a
+        // manual ON and never touches safety — SystemManager still regulates 40 C.
+        static uint32_t last_brain_ms = 0u;
+        if (millis() - last_brain_ms >= 60000UL) {
+            last_brain_ms = millis();
+            PreheatInputs pin;
+            pin.unixNow       = (uint32_t)time(nullptr);
+            pin.tankTempC     = last_t_internal;
+            pin.mode          = (OpMode)UI_GetOpMode();
+            pin.readyByMinute = UI_GetReadyByMinute();
+            pin.household     = UI_GetHouseholdSize();
+            pin.manualOn      = boiler_state;
+            pin.plcConnected  = true;
+            SmartPreheat::update(pin);
+        }
+
+        // Boiler is ON if the user pressed ON, OR the brain is preheating.
+        inputs.uiStateOn = boiler_state || SmartPreheat::wantsHeat();
     }
 
     SystemCommand cmd = s_manager.process(inputs);
