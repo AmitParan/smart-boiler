@@ -41,6 +41,12 @@ static SystemManager s_manager;
 // Used by sendCommand() to override the state label in demo mode.
 static bool slave_has_fault = false;
 
+// PLC connection watchdog (BUG-2 / SW-1 fix): in REALTIME, plcConnected is
+// derived from how recently a valid STATUS arrived — not hardcoded true.
+static const uint32_t PLC_TIMEOUT_MS = 5000u;   // matches book section 10 (5s no-STATUS -> SAFETY_OVERRIDE)
+static uint32_t last_status_ms = 0u;
+static bool     status_ever    = false;
+
 // ---------------------------------------------------------------------------
 //  processStatusPacket
 //  Decodes a validated raw STATUS buffer and updates the UI.
@@ -58,6 +64,10 @@ static void processStatusPacket(const uint8_t* raw) {
         }
     }
     last_rx_seq = pkt->sequence;
+
+    // PLC watchdog: a valid STATUS just arrived — mark the link alive.
+    last_status_ms = millis();
+    status_ever    = true;
 
     // Decode fixed-point values back to floats
     float t_internal  = pkt->tempInternal  / 10.0f;
@@ -124,7 +134,10 @@ static void sendCommand() {
         inputs.currentTemp  = last_t_internal;
         inputs.flowRateLPM  = last_flow;
         inputs.uiStateOn    = boiler_state;
-        inputs.plcConnected = true;
+        // BUG-2 fix: link is "connected" only if a STATUS arrived within the timeout.
+        // Fail-safe: before the first STATUS (status_ever==false) the link is treated
+        // as disconnected, so SystemManager holds SAFETY_OVERRIDE until the slave is heard.
+        inputs.plcConnected = status_ever && (millis() - last_status_ms < PLC_TIMEOUT_MS);
     }
 
     SystemCommand cmd = s_manager.process(inputs);
