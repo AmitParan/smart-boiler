@@ -83,18 +83,18 @@ main.cpp
 |----------|---------------------|---------------------------------------------------|---------------------------|
 | 1 (high) | SAFETY_OVERRIDE     | plcConnected = false OR temp ≥ 85°C               | pwmInt=0, boost=0         |
 | 2        | STATE_OFF           | uiStateOn = false                                 | pwmInt=0, boost=0         |
-| 3        | STATE_SHOWER_BOOST  | flow > 0.5 L/min AND currentTemp < 45°C           | pwmInt=0, boost=100       |
-| 3        | STATE_SHOWER_BOOST  | flow > 0.5 L/min AND currentTemp ≥ 45°C           | pwmInt=0, boost=0 (warm enough) |
+| 3        | STATE_SHOWER_BOOST  | flow > 1.0 L/min AND currentTemp < 42°C           | pwmInt=0, boost=100       |
+| 3        | STATE_SHOWER_BOOST  | flow > 1.0 L/min AND currentTemp ≥ 42°C           | pwmInt=0, boost=0 (warm enough) |
 | 4        | STATE_HEATING_TANK  | no flow AND currentTemp < 40°C                    | pwmInt=100, boost=0       |
 | 5 (low)  | STATE_STANDBY       | no flow AND currentTemp ≥ 40°C                    | pwmInt=0, boost=0         |
 
 **Key constants** (`SystemManager.h`):
 - `TARGET_TANK_TEMP = 40°C` — internal heater target
-- `BOOST_CUTOFF_C = 45°C` — boost heater disables above this tank temp
+- `BOOST_CUTOFF_C = 42°C` — boost heater disables above this tank temp (Models S3 dynamic target)
 - `TEMP_CUTOFF_C = 85°C` — hard safety cutoff
-- `FLOW_THRESHOLD_LPM = 0.5 L/min` — minimum flow to trigger boost
+- `FLOW_THRESHOLD_LPM = 1.0 L/min` — minimum flow to trigger boost (matches slave boost interlock)
 
-> Note: `plcConnected` is hardcoded to `true` in `sendCommand()`. SAFETY_OVERRIDE never fires. This needs fixing in a future version (BUG-2).
+> Note: `plcConnected` is derived from a real STATUS-timeout watchdog in `comms_master.cpp` (5s). SAFETY_OVERRIDE fires on true PLC loss in REALTIME (BUG-2 fixed).
 
 ### 3.2 Slave Tasks (ESP32-C6, FreeRTOS, all pinned to Core 0)
 
@@ -245,9 +245,8 @@ Slave switches automatically when CMD contains `CMD_DEMO_ACTIVE` flag.
 
 | Mode | Serial command | Behaviour |
 |---|---|---|
-| `MODE_BENCH_TEST` | `b` | Legacy: sensors + interlocks bypassed. Boot default. |
-| `MODE_DEMO` | `d` (or auto via CMD) | Mock sensors from master flags. All interlocks active. Faults auto-clear after 2s. |
-| `MODE_PRODUCTION` | `p` | Real sensors, all interlocks permanent. |
+| `MODE_DEMO` | `d` (or auto via CMD) — boot default | Mock sensors from master flags; real DS18B20/YF-B6/ACS758 ignored. All interlocks active. Faults auto-clear after 2s. |
+| `MODE_REALTIME` | `r` (or auto via CMD) | Real DS18B20 / YF-B6 / ACS758 sensors. All interlocks permanent. |
 
 ### 6.3 Demo Scenario Flags in cmdFlags
 
@@ -334,10 +333,9 @@ Slave infers mock temp from SSR command: HEATER→ON = 25°C, BOOST→ON = 35°C
 **Workaround:** Disconnect 220V from the SSR output, then reboot the slave.  
 **Proper fix needed:** Add VREF sanity clamp in `current_task.cpp` (reject calibration if VREF deviates >10% from 2.5V nominal) AND ensure SSR pins are explicitly LOW before calibration runs.
 
-### BUG-2: `plcConnected` hardcoded to `true` (comms_master.cpp)
-**Symptom:** SAFETY_OVERRIDE state in SystemManager never fires, even if PLC communication is actually lost.  
-**Root cause:** `inputs.plcConnected = true` is hardcoded in `sendCommand()`.  
-**Proper fix needed:** Track last received STATUS timestamp; set `plcConnected = false` if no STATUS received in >5 seconds.
+### BUG-2 (FIXED): `plcConnected` hardcoded to `true` (comms_master.cpp)
+**Was:** `inputs.plcConnected = true` hardcoded in `sendCommand()` → SAFETY_OVERRIDE never fired on real PLC loss.  
+**Fix:** `sendCommand()` (REALTIME) now sets `plcConnected = status_ever && (millis() - last_status_ms < 5000)`. A valid STATUS refreshes `last_status_ms`; before the first STATUS the link is treated as disconnected (fail-safe). SAFETY_OVERRIDE now fires after 5 s of silence.
 
 ### NOTE (was BUG-3): SSR LEDC 1 kHz carrier is REQUIRED by the hardware watchdog (pwm_task_internal.cpp, pwm_task_boost.cpp)
 The internal/boost SSR gate is a **DC-blocking capacitive watchdog** (project book §9.1.9, "Internal/External Watchdog Gate"): it latches only while it receives a continuous high-frequency pulse train, and treats a constant DC level as a controller-freeze fault, cutting the heater within ~1s (RC τ≈1s).  
@@ -365,7 +363,7 @@ Before writing more code, confirm these hardware items work:
 - [ ] **HW-8** Add 5V→3.3V level shifter on master RX (GPIO13) from KQ-330 DOUT before final install.
 
 ### Phase 2: Software Bug Fixes
-- [ ] **SW-1** Fix BUG-2: implement PLC watchdog in comms_master.cpp — set `plcConnected = false` after 5 seconds with no STATUS received
+- [x] **SW-1** ✅ DONE — PLC watchdog implemented in comms_master.cpp (`plcConnected` from 5 s STATUS-timeout; fail-safe before first STATUS).
 - [ ] **SW-2** Fix BUG-1: add VREF sanity clamp in `current_task.cpp` AND drive SSR pins LOW explicitly before calibration starts
 - [x] **SW-3** ❌ REJECTED — do NOT replace `ledcWrite(pin, 127)` with `digitalWrite(HIGH)`. The 1 kHz carrier is required by the DC-blocking hardware watchdog gate (see NOTE "was BUG-3"). Constant DC would trip the interlock and cut the heater. Closed, no action.
 - [ ] **SW-4** Add `system_fault` reset mechanism (e.g. CMD_EMERGENCY_STOP cleared = reset fault) so recovery doesn't require hardware reboot
