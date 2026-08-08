@@ -19,10 +19,10 @@ volatile uint8_t cmd_flags        = 0u;
 volatile bool    system_fault     = false;
 
 // FreeRTOS mutexes (created in main.cpp setup(), before tasks start)
-SemaphoreHandle_t mutex_temps   = nullptr;
-SemaphoreHandle_t mutex_flow    = nullptr;
-SemaphoreHandle_t mutex_current = nullptr;
-SemaphoreHandle_t mutex_cmd     = nullptr;
+SemaphoreHandle_t guard_temps   = nullptr;
+SemaphoreHandle_t guard_flow    = nullptr;
+SemaphoreHandle_t guard_current = nullptr;
+SemaphoreHandle_t guard_cmd     = nullptr;
 
 // Demo mode flag-based sensor injection
 volatile bool     slave_demo_flow_active = false;

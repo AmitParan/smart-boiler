@@ -22,9 +22,9 @@ void TaskFlow(void * pvParameters) {
         if (currentMode == MODE_DEMO) {
             // CMD_DEMO_FLOW flag = simulate active water flow (6.5 L/min)
             float mock_flow = slave_demo_flow_active ? 6.5f : 0.0f;
-            if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (xSemaphoreTake(guard_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
                 current_flow = mock_flow;
-                xSemaphoreGive(mutex_flow);
+                xSemaphoreGive(guard_flow);
             }
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
@@ -45,9 +45,9 @@ void TaskFlow(void * pvParameters) {
         if(flow < 0.5) flow = 0.0; // Filter noise
 
         // Update shared variable under mutex
-        if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(guard_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
             current_flow = flow;
-            xSemaphoreGive(mutex_flow);
+            xSemaphoreGive(guard_flow);
         }
     }
 }

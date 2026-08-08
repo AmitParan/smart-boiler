@@ -55,13 +55,13 @@ extern volatile bool     current_sensor_valid;  ///< true only if ACS758 VREF wi
 
 // ---------------------------------------------------------------------------
 //  FreeRTOS mutual exclusion
-//  mutex_*    : Created in main.cpp before any task starts.
+//  guard_*    : Created in main.cpp before any task starts.
 //  timerMux   : Spinlock used only inside the flow sensor ISR.
 // ---------------------------------------------------------------------------
-extern SemaphoreHandle_t mutex_temps;    ///< guards temps[3]
-extern SemaphoreHandle_t mutex_flow;     ///< guards current_flow
-extern SemaphoreHandle_t mutex_current;  ///< guards current_rms, power_watts
-extern SemaphoreHandle_t mutex_cmd;      ///< guards cmd_pwm_internal/boost/flags
+extern SemaphoreHandle_t guard_temps;    ///< guards temps[3]
+extern SemaphoreHandle_t guard_flow;     ///< guards current_flow
+extern SemaphoreHandle_t guard_current;  ///< guards current_rms, power_watts
+extern SemaphoreHandle_t guard_cmd;      ///< guards cmd_pwm_internal/boost/flags
 extern portMUX_TYPE      timerMux;       ///< ISR-safe spinlock for flow pulse counter
 
 #endif // SHARED_DATA_H

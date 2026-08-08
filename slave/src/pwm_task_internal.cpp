@@ -4,6 +4,16 @@
 #include "boiler_protocol.h"
 
 void TaskPWM_Internal(void* pvParameters) {
+    // -----------------------------------------------------------------------
+    //  HARDWARE-INTERLOCK REQUIREMENT  (Project Book: "Internal Watchdog Gate")
+    //  The SSR gate is DC-blocking (series input capacitors). It latches ONLY
+    //  while it receives a continuous high-frequency pulse train ("AC" proof of
+    //  a live controller). A constant DC level is read as a controller-freeze
+    //  fault and the gate physically cuts the heater within ~1 s (RC, tau ~= 1 s).
+    //    => ledcWrite(pin, 127) @ 1 kHz supplies that MANDATORY carrier.
+    //    => DO NOT replace with digitalWrite(HIGH) (README "SW-3"): constant DC
+    //       trips the hardware watchdog and the heater can never sustain ON.
+    // -----------------------------------------------------------------------
     ledcAttach(PIN_SSR_INT, 1000, 8);
     ledcWrite(PIN_SSR_INT, 0);
 
@@ -20,10 +30,10 @@ void TaskPWM_Internal(void* pvParameters) {
         // Snapshot command values at start of burst cycle
         uint8_t pwm_val    = 0u;
         bool    enabled    = false;
-        if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(guard_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
             pwm_val = cmd_pwm_internal;
             enabled = (cmd_flags & CMD_HEATER_ENABLE) != 0u;
-            xSemaphoreGive(mutex_cmd);
+            xSemaphoreGive(guard_cmd);
         }
 
         if (!enabled) { pwm_val = 0; }

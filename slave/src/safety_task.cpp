@@ -1,4 +1,4 @@
-﻿#include "safety_task.h"
+#include "safety_task.h"
 #include "config.h"
 #include "shared_data.h"
 #include "system_mode.h"
@@ -25,21 +25,21 @@ void TaskSafety(void* pvParameters) {
         float local_current  = 0.0f;
         uint8_t local_pwm_int = 0u, local_pwm_bst = 0u, local_flags = 0u;
 
-        if (xSemaphoreTake(mutex_temps,   pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (xSemaphoreTake(guard_temps,   pdMS_TO_TICKS(5)) == pdTRUE) {
             local_temps[0] = temps[0]; local_temps[1] = temps[1]; local_temps[2] = temps[2];
-            xSemaphoreGive(mutex_temps);
+            xSemaphoreGive(guard_temps);
         }
-        if (xSemaphoreTake(mutex_flow,    pdMS_TO_TICKS(5)) == pdTRUE) {
-            local_flow = current_flow; xSemaphoreGive(mutex_flow);
+        if (xSemaphoreTake(guard_flow,    pdMS_TO_TICKS(5)) == pdTRUE) {
+            local_flow = current_flow; xSemaphoreGive(guard_flow);
         }
-        if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(5)) == pdTRUE) {
-            local_current = current_rms; xSemaphoreGive(mutex_current);
+        if (xSemaphoreTake(guard_current, pdMS_TO_TICKS(5)) == pdTRUE) {
+            local_current = current_rms; xSemaphoreGive(guard_current);
         }
-        if (xSemaphoreTake(mutex_cmd,     pdMS_TO_TICKS(5)) == pdTRUE) {
+        if (xSemaphoreTake(guard_cmd,     pdMS_TO_TICKS(5)) == pdTRUE) {
             local_pwm_int = cmd_pwm_internal;
             local_pwm_bst = cmd_pwm_boost;
             local_flags   = cmd_flags;
-            xSemaphoreGive(mutex_cmd);
+            xSemaphoreGive(guard_cmd);
         }
 
         // 1. Overheat (always active, both modes)
@@ -67,17 +67,17 @@ void TaskSafety(void* pvParameters) {
         if (boost_commanded && local_flow < 1.0f) {
             fault = true;
             if (currentMode == MODE_DEMO) {
-                /* silent — not a demo scenario fault */
+                /* silent - not a demo scenario fault */
             } else {
                 Serial.println("[SAFETY] FAULT: Boost commanded with no flow!");
             }
         }
 
         // 3. Uncommanded current
-        //    DEMO:     always check — mock current data is accurate (no ADC involved)
+        //    DEMO:     always check - mock current data is accurate (no ADC involved)
         //    REALTIME: only check if sensor was properly calibrated (VREF in spec)
         //              If VREF was out of range at boot (ADC non-linearity / 5V supply issue)
-        //              the raw readings are unreliable — skip to avoid phantom faults.
+        //              the raw readings are unreliable - skip to avoid phantom faults.
         bool any_commanded = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
         bool do_current_check = (currentMode == MODE_DEMO) || current_sensor_valid;
         if (do_current_check && !any_commanded && local_current > 0.5f) {

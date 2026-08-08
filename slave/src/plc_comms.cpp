@@ -57,20 +57,20 @@ void PLC_SendStatus() {
     float local_power    = 0.0f;
     float local_current  = 0.0f;
 
-    if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (xSemaphoreTake(guard_temps, pdMS_TO_TICKS(10)) == pdTRUE) {
         local_temps[0] = temps[0];
         local_temps[1] = temps[1];
         local_temps[2] = temps[2];
-        xSemaphoreGive(mutex_temps);
+        xSemaphoreGive(guard_temps);
     }
-    if (xSemaphoreTake(mutex_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (xSemaphoreTake(guard_flow, pdMS_TO_TICKS(10)) == pdTRUE) {
         local_flow = current_flow;
-        xSemaphoreGive(mutex_flow);
+        xSemaphoreGive(guard_flow);
     }
-    if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (xSemaphoreTake(guard_current, pdMS_TO_TICKS(10)) == pdTRUE) {
         local_power   = power_watts;
         local_current = current_rms;
-        xSemaphoreGive(mutex_current);
+        xSemaphoreGive(guard_current);
     }
 
     // Temperatures encoded as int16 × 10  (e.g. 65.2°C → 652)
@@ -226,20 +226,20 @@ bool PLC_ReceivePacket() {
 
                             // Emergency stop overrides everything
                             if (cmd->cmdFlags & CMD_EMERGENCY_STOP) {
-                                if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                                if (xSemaphoreTake(guard_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
                                     cmd_pwm_internal = 0u;
                                     cmd_pwm_boost    = 0u;
                                     cmd_flags        = 0u;
-                                    xSemaphoreGive(mutex_cmd);
+                                    xSemaphoreGive(guard_cmd);
                                 }
                                 system_fault = true;
                                 Serial.println("[PLC RX] *** EMERGENCY STOP ***");
                             } else {
-                                if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                                if (xSemaphoreTake(guard_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
                                     cmd_pwm_internal = cmd->pwmInternal;
                                     cmd_pwm_boost    = cmd->pwmBoost;
                                     cmd_flags        = cmd->cmdFlags;
-                                    xSemaphoreGive(mutex_cmd);
+                                    xSemaphoreGive(guard_cmd);
                                 }
                             }
 

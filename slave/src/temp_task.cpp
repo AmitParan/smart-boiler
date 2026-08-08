@@ -29,20 +29,20 @@ void TaskTemp(void * pvParameters) {
                 t = 87.0f;    // Scenario 7: triggers overheat safety at 80C
             } else {
                 uint8_t local_pwm_int = 0u, local_pwm_bst = 0u;
-                if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+                if (xSemaphoreTake(guard_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
                     local_pwm_int = cmd_pwm_internal;
                     local_pwm_bst = cmd_pwm_boost;
-                    xSemaphoreGive(mutex_cmd);
+                    xSemaphoreGive(guard_cmd);
                 }
                 if      (local_pwm_int > 0u) t = 25.0f;  // cold tank heating
                 else if (local_pwm_bst > 0u) t = 35.0f;  // shower, below 40C target
                 else                         t = 42.0f;  // warm standby
             }
-            if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (xSemaphoreTake(guard_temps, pdMS_TO_TICKS(50)) == pdTRUE) {
                 temps[0] = t;
                 temps[1] = t - 2.0f;
                 temps[2] = t + 1.0f;
-                xSemaphoreGive(mutex_temps);
+                xSemaphoreGive(guard_temps);
             }
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
@@ -50,11 +50,11 @@ void TaskTemp(void * pvParameters) {
 
         sensors.requestTemperatures();   // blocks ~188 ms for 10-bit
 
-        if (xSemaphoreTake(mutex_temps, pdMS_TO_TICKS(50)) == pdTRUE) {
+        if (xSemaphoreTake(guard_temps, pdMS_TO_TICKS(50)) == pdTRUE) {
             for (int i = 0; i < 3; i++) {
                 temps[i] = sensors.getTempCByIndex(i);
             }
-            xSemaphoreGive(mutex_temps);
+            xSemaphoreGive(guard_temps);
         }
 
         vTaskDelay(pdMS_TO_TICKS(1000));

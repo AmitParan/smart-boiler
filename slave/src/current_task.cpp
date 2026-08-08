@@ -54,10 +54,10 @@ void TaskCurrent(void * pvParameters) {
         if (currentMode == MODE_DEMO) {
             // Compute mock RMS current from commanded SSR state
             uint8_t local_pwm_int = 0u, local_pwm_bst = 0u;
-            if (xSemaphoreTake(mutex_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (xSemaphoreTake(guard_cmd, pdMS_TO_TICKS(10)) == pdTRUE) {
                 local_pwm_int = cmd_pwm_internal;
                 local_pwm_bst = cmd_pwm_boost;
-                xSemaphoreGive(mutex_cmd);
+                xSemaphoreGive(guard_cmd);
             }
             float mock_rms;
             if (slave_demo_fault_sim) {
@@ -70,10 +70,10 @@ void TaskCurrent(void * pvParameters) {
             } else {
                 mock_rms = 0.0f;
             }
-            if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (xSemaphoreTake(guard_current, pdMS_TO_TICKS(10)) == pdTRUE) {
                 current_rms = mock_rms;
                 power_watts = mock_rms * 220.0f;
-                xSemaphoreGive(mutex_current);
+                xSemaphoreGive(guard_current);
             }
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
@@ -95,10 +95,10 @@ void TaskCurrent(void * pvParameters) {
         // Filter noise floor
         if (rms_current < 0.2f) rms_current = 0.0f;
 
-        if (xSemaphoreTake(mutex_current, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(guard_current, pdMS_TO_TICKS(10)) == pdTRUE) {
             current_rms = rms_current;
             power_watts = rms_current * 220.0f;
-            xSemaphoreGive(mutex_current);
+            xSemaphoreGive(guard_current);
         }
 
         vTaskDelay(pdMS_TO_TICKS(500));

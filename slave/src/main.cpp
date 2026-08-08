@@ -21,12 +21,12 @@ void setup() {
     //  Create FreeRTOS mutexes before any task starts.
     //  All tasks that access shared_data must take the appropriate mutex.
     // -----------------------------------------------------------------------
-    mutex_temps   = xSemaphoreCreateMutex();
-    mutex_flow    = xSemaphoreCreateMutex();
-    mutex_current = xSemaphoreCreateMutex();
-    mutex_cmd     = xSemaphoreCreateMutex();
+    guard_temps   = xSemaphoreCreateMutex();
+    guard_flow    = xSemaphoreCreateMutex();
+    guard_current = xSemaphoreCreateMutex();
+    guard_cmd     = xSemaphoreCreateMutex();
 
-    if (!mutex_temps || !mutex_flow || !mutex_current || !mutex_cmd) {
+    if (!guard_temps || !guard_flow || !guard_current || !guard_cmd) {
         Serial.println("[FATAL] Failed to create mutexes � halting.");
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
