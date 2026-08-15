@@ -46,7 +46,7 @@ static const int LEAD_TIME_MIN = 45;  // pre-heat lead time — matches SmartPre
 // ---------------------------------------------------------------------------
 static lv_obj_t* page_home        = NULL;
 static lv_obj_t* page_settings     = NULL;
-static lv_obj_t* lbl_app_mode      = NULL;  // mode toggle label in Settings
+static lv_obj_t* lbl_app_mode      = NULL;  // Data-source (Demo/Real-time) label — Diagnostics header
 static lv_obj_t* page_schedule     = NULL;
 static lv_obj_t* page_network      = NULL;
 static lv_obj_t* page_password     = NULL;
@@ -1291,9 +1291,11 @@ static void mode_toggle_cb(lv_event_t*) {
     demo_stop_comms  = false;
     demo_fault_sim   = false;
     demo_solar_active = false;
-    lv_label_set_text(lbl_app_mode,
-                      appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
-                                               : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
+    if (lbl_app_mode != NULL) {
+        lv_label_set_text(lbl_app_mode,
+                          appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  Data: Demo"
+                                               : LV_SYMBOL_EYE_OPEN "  Data: Real-time");
+    }
     Serial.printf("[UI] Mode switched to: %s\n",
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 }
@@ -1522,44 +1524,8 @@ static void build_settings_page(lv_obj_t* scr) {
     make_settings_nav_btn(LV_SYMBOL_EDIT, "Diagnostics", CLR_SUBTEXT, goto_diagnostics_cb);
     make_settings_nav_btn(LV_SYMBOL_HOME, "Setup", CLR_ACCENT, goto_wizard_cb);
 
-    // ---- Demo / Realtime mode toggle ----------------------------------------
-    lv_obj_t* lbl_mode_title = lv_label_create(body);
-    lv_label_set_text(lbl_mode_title, "Operation mode");
-    lv_obj_set_style_text_font(lbl_mode_title, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_mode_title, CLR_SUBTEXT, 0);
-    lv_obj_set_pos(lbl_mode_title, 0, 290);
-
-    lv_obj_t* mode_row = lv_obj_create(body);
-    disableScroll(mode_row);
-    lv_obj_set_size(mode_row, lv_pct(100), 60);
-    lv_obj_set_pos(mode_row, 0, 316);
-    lv_obj_set_style_bg_color(mode_row, lv_color_white(), 0);
-    lv_obj_set_style_border_width(mode_row, 2, 0);
-    lv_obj_set_style_border_color(mode_row, CLR_BORDER, 0);
-    lv_obj_set_style_radius(mode_row, 16, 0);
-    lv_obj_set_style_pad_hor(mode_row, 20, 0);
-    lv_obj_set_flex_flow(mode_row, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(mode_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t* lbl_mode_name = lv_label_create(mode_row);
-    lbl_app_mode = lbl_mode_name;
-    lv_label_set_text(lbl_mode_name,
-                      appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  DEMO mode"
-                                               : LV_SYMBOL_EYE_OPEN "  REAL-TIME mode");
-    lv_obj_set_style_text_font(lbl_mode_name, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(lbl_mode_name, CLR_TEXT, 0);
-
-    lv_obj_t* btn_mode = lv_btn_create(mode_row);
-    lv_obj_set_size(btn_mode, 120, 42);
-    lv_obj_set_style_radius(btn_mode, 12, 0);
-    lv_obj_set_style_bg_color(btn_mode, CLR_ACCENT, 0);
-    lv_obj_set_style_border_width(btn_mode, 0, 0);
-    lv_obj_add_event_cb(btn_mode, mode_toggle_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_t* lbl_btn = lv_label_create(btn_mode);
-    lv_label_set_text(lbl_btn, "Switch");
-    lv_obj_set_style_text_font(lbl_btn, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_btn, lv_color_white(), 0);
-    lv_obj_center(lbl_btn);
+    // Demo / Real-time is a developer & presentation control — it now lives on
+    // the Diagnostics (technician) screen, not on this consumer Settings screen.
 }
 
 static lv_obj_t* make_seg_btn(lv_obj_t* parent, const char* text, lv_event_cb_t cb, lv_obj_t** out_lbl) {
@@ -2350,6 +2316,25 @@ static void build_diagnostics_page(lv_obj_t* scr) {
     lv_obj_t* header = make_header(page_diagnostics, CLR_DIAG_HDR);
     make_back_btn(header, page_settings);
     make_header_title(header, LV_SYMBOL_EDIT "  Diagnostics");
+
+    // Data source (Demo / Real-time) — dev & presentation control. Lives on the
+    // Diagnostics (technician) screen, not on the consumer Settings screen.
+    // DEMO = mock scenario data; REAL-TIME = live DS18B20 / YF-B6 / ACS758.
+    lv_obj_t* btn_ds = lv_btn_create(header);
+    lv_obj_set_height(btn_ds, 40);
+    lv_obj_set_width(btn_ds, LV_SIZE_CONTENT);
+    lv_obj_align(btn_ds, LV_ALIGN_RIGHT_MID, -16, 0);
+    lv_obj_set_style_radius(btn_ds, 12, 0);
+    lv_obj_set_style_bg_color(btn_ds, CLR_ACCENT, 0);
+    lv_obj_set_style_border_width(btn_ds, 0, 0);
+    lv_obj_add_event_cb(btn_ds, mode_toggle_cb, LV_EVENT_CLICKED, NULL);
+    lbl_app_mode = lv_label_create(btn_ds);
+    lv_label_set_text(lbl_app_mode,
+                      appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  Data: Demo"
+                                           : LV_SYMBOL_EYE_OPEN "  Data: Real-time");
+    lv_obj_set_style_text_font(lbl_app_mode, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_app_mode, lv_color_white(), 0);
+    lv_obj_center(lbl_app_mode);
 
     lv_obj_t* grid = lv_obj_create(page_diagnostics);
     disableScroll(grid);
