@@ -46,6 +46,7 @@ static const int LEAD_TIME_MIN = 45;  // pre-heat lead time — matches SmartPre
 // ---------------------------------------------------------------------------
 static lv_obj_t* page_home        = NULL;
 static lv_obj_t* page_settings     = NULL;
+static lv_obj_t* btn_app_mode      = NULL;  // Data-source (Demo/Real-time) button — Diagnostics header
 static lv_obj_t* lbl_app_mode      = NULL;  // Data-source (Demo/Real-time) label — Diagnostics header
 static lv_obj_t* page_schedule     = NULL;
 static lv_obj_t* page_network      = NULL;
@@ -120,6 +121,12 @@ static lv_obj_t* btn_day_wk         = NULL;
 static lv_obj_t* lbl_day_wk         = NULL;
 static lv_obj_t* btn_day_we         = NULL;
 static lv_obj_t* lbl_day_we         = NULL;
+static lv_obj_t* btn_slot_am        = NULL;
+static lv_obj_t* lbl_slot_am        = NULL;
+static lv_obj_t* btn_slot_pm        = NULL;
+static lv_obj_t* lbl_slot_pm        = NULL;
+static lv_obj_t* btn_slot_en        = NULL;
+static lv_obj_t* lbl_slot_en        = NULL;
 static lv_obj_t* lbl_hh             = NULL;
 static lv_obj_t* lbl_mm             = NULL;
 static lv_obj_t* lbl_next_preheat   = NULL;
@@ -199,15 +206,17 @@ static int   g_usage_day             = -1;   // day-of-year; -1 = not loaded yet
 static unsigned long g_last_usage_ms      = 0;
 static unsigned long g_last_usage_save_ms = 0;
 
-// Schedule — local UI state only. No scheduling backend exists on this
-// branch (SystemManager has no auto-preheat support), so this page is a
-// front-end placeholder: it doesn't drive any heating decision yet.
+// Schedule — operation-mode + ready-by state. Drives the SmartPreheat brain
+// (smart_preheat.cpp) via UI_GetOpMode() / UI_GetReadyByMinutes().
 static bool g_auto_enabled  = true;
 static bool g_smart_learn   = false;   // false = "Ready by" mode
-static int  g_ready_hh[2]   = {7, 9};  // [0]=weekday [1]=weekend
-static int  g_ready_mm[2]   = {0, 0};
-static int  g_sched_day_idx = 0;
-static bool g_skip_today    = false;
+// Ready-by schedule: [day-type][slot]. day 0=weekday 1=weekend, slot 0=morning 1=evening.
+static int  g_ready_hh[2][2] = {{7, 19}, {9, 19}};
+static int  g_ready_mm[2][2] = {{0, 0},  {0, 0}};
+static bool g_ready_en[2][2] = {{true, false}, {true, false}};  // is this slot active?
+static int  g_sched_day_idx  = 0;   // which day-type is being edited (0=weekday 1=weekend)
+static int  g_sched_slot_idx = 0;   // which slot is being edited   (0=morning 1=evening)
+static bool g_skip_today     = false;
 
 // Setup Wizard — working values for the in-progress step, plus the last
 // persisted household/ready-time preferences (loaded at boot, used to
@@ -235,9 +244,9 @@ uint8_t UI_GetOpMode() {
     return g_smart_learn ? 2 : 1;         // OP_SMART : OP_READY_BY
 }
 
-uint16_t UI_GetReadyByMinute() {
-    // Weekday/weekend ready-by time (Israel weekend = Fri/Sat). Falls back to
-    // the weekday value when the clock is not synced yet.
+uint8_t UI_GetReadyByMinutes(uint16_t* out, uint8_t maxN) {
+    // Enabled ready-by times for today (Israel weekend = Fri/Sat). Falls back to
+    // the weekday set when the clock is not synced yet. Returns how many filled.
     int idx = 0;
     time_t now = time(nullptr);
     if (now > 100000) {
@@ -245,7 +254,11 @@ uint16_t UI_GetReadyByMinute() {
         localtime_r(&now, &tmv);
         if (tmv.tm_wday == 5 || tmv.tm_wday == 6) idx = 1;
     }
-    return (uint16_t)(g_ready_hh[idx] * 60 + g_ready_mm[idx]);
+    uint8_t n = 0;
+    for (int s = 0; s < 2 && n < maxN; s++) {
+        if (g_ready_en[idx][s]) out[n++] = (uint16_t)(g_ready_hh[idx][s] * 60 + g_ready_mm[idx][s]);
+    }
+    return n;
 }
 
 uint8_t UI_GetHouseholdSize() {
@@ -711,6 +724,18 @@ static void wifi_icon_click_event_cb(lv_event_t* e) { goto_network_cb(e); }
 // ---------------------------------------------------------------------------
 //  Schedule (local UI state only — see note at g_auto_enabled declaration)
 // ---------------------------------------------------------------------------
+// Earliest enabled ready-by time (minute-of-day) for a day-type, or -1 if none.
+static int earliest_ready(int day) {
+    int best = -1;
+    for (int s = 0; s < 2; s++) {
+        if (g_ready_en[day][s]) {
+            int t = g_ready_hh[day][s] * 60 + g_ready_mm[day][s];
+            if (best < 0 || t < best) best = t;
+        }
+    }
+    return best;
+}
+
 static void update_auto_badge() {
     if (btn_auto_badge == NULL || lbl_auto_badge == NULL) return;
     if (!g_auto_enabled) {
@@ -718,30 +743,55 @@ static void update_auto_badge() {
         lv_label_set_text(lbl_auto_badge, LV_SYMBOL_CHARGE "  Manual");
         return;
     }
-    int total = g_ready_hh[g_sched_day_idx] * 60 + g_ready_mm[g_sched_day_idx] - LEAD_TIME_MIN;
+    lv_obj_set_style_bg_color(btn_auto_badge, lv_palette_main(LV_PALETTE_GREEN), 0);
+    if (g_smart_learn) {
+        lv_label_set_text(lbl_auto_badge, LV_SYMBOL_CHARGE "  Auto (smart)");
+        return;
+    }
+    int r = earliest_ready(g_sched_day_idx);
+    if (r < 0) { lv_label_set_text(lbl_auto_badge, LV_SYMBOL_CHARGE "  Auto --:--"); return; }
+    int total = r - LEAD_TIME_MIN;
     if (total < 0) total += 1440;
     char buf[24];
     snprintf(buf, sizeof(buf), LV_SYMBOL_CHARGE "  Auto %02d:%02d", total / 60, total % 60);
-    lv_obj_set_style_bg_color(btn_auto_badge, lv_palette_main(LV_PALETTE_GREEN), 0);
     lv_label_set_text(lbl_auto_badge, buf);
 }
 
 static void recompute_next_preheat() {
-    if (lbl_next_preheat == NULL) return;
-    int total = g_ready_hh[g_sched_day_idx] * 60 + g_ready_mm[g_sched_day_idx] - LEAD_TIME_MIN;
-    if (total < 0) total += 1440;
-    char buf[8];
-    snprintf(buf, sizeof(buf), "%02d:%02d", total / 60, total % 60);
-    lv_label_set_text(lbl_next_preheat, buf);
+    if (lbl_next_preheat != NULL) {
+        int r = earliest_ready(g_sched_day_idx);
+        if (r < 0) {
+            lv_label_set_text(lbl_next_preheat, "--:--");
+        } else {
+            int total = r - LEAD_TIME_MIN;
+            if (total < 0) total += 1440;
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%02d:%02d", total / 60, total % 60);
+            lv_label_set_text(lbl_next_preheat, buf);
+        }
+    }
     update_auto_badge();
+}
+
+// Highlights the Morning/Evening slot selector + the current slot's On/Off toggle.
+static void update_slot_buttons() {
+    bool am = (g_sched_slot_idx == 0);
+    if (btn_slot_am != NULL) lv_obj_set_style_bg_color(btn_slot_am, am ? CLR_ACCENT : lv_color_white(), 0);
+    if (lbl_slot_am != NULL) lv_obj_set_style_text_color(lbl_slot_am, am ? lv_color_white() : CLR_TEXT, 0);
+    if (btn_slot_pm != NULL) lv_obj_set_style_bg_color(btn_slot_pm, !am ? CLR_ACCENT : lv_color_white(), 0);
+    if (lbl_slot_pm != NULL) lv_obj_set_style_text_color(lbl_slot_pm, !am ? lv_color_white() : CLR_TEXT, 0);
+    bool en = g_ready_en[g_sched_day_idx][g_sched_slot_idx];
+    if (btn_slot_en != NULL) lv_obj_set_style_bg_color(btn_slot_en, en ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_GREY), 0);
+    if (lbl_slot_en != NULL) lv_label_set_text(lbl_slot_en, en ? LV_SYMBOL_OK "  On" : LV_SYMBOL_CLOSE "  Off");
 }
 
 static void update_time_labels() {
     char hb[4], mb[4];
-    snprintf(hb, sizeof(hb), "%02d", g_ready_hh[g_sched_day_idx]);
-    snprintf(mb, sizeof(mb), "%02d", g_ready_mm[g_sched_day_idx]);
+    snprintf(hb, sizeof(hb), "%02d", g_ready_hh[g_sched_day_idx][g_sched_slot_idx]);
+    snprintf(mb, sizeof(mb), "%02d", g_ready_mm[g_sched_day_idx][g_sched_slot_idx]);
     if (lbl_hh != NULL) lv_label_set_text(lbl_hh, hb);
     if (lbl_mm != NULL) lv_label_set_text(lbl_mm, mb);
+    update_slot_buttons();
     recompute_next_preheat();
 }
 
@@ -782,10 +832,13 @@ static void sched_mode_ready_cb (lv_event_t* e) { last_touch_time = millis(); g_
 static void sched_mode_smart_cb (lv_event_t* e) { last_touch_time = millis(); g_auto_enabled = true;  g_smart_learn = true;  update_mode_buttons(); update_auto_badge(); }
 static void sched_day_wk_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_day_idx = 0; update_day_buttons(); update_time_labels(); }
 static void sched_day_we_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_day_idx = 1; update_day_buttons(); update_time_labels(); }
-static void sched_hh_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx] = (g_ready_hh[g_sched_day_idx] + 1) % 24; update_time_labels(); }
-static void sched_hh_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx] = (g_ready_hh[g_sched_day_idx] + 23) % 24; update_time_labels(); }
-static void sched_mm_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx] = (g_ready_mm[g_sched_day_idx] + 5) % 60; update_time_labels(); }
-static void sched_mm_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx] = (g_ready_mm[g_sched_day_idx] + 55) % 60; update_time_labels(); }
+static void sched_slot_am_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_slot_idx = 0; update_time_labels(); }
+static void sched_slot_pm_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_slot_idx = 1; update_time_labels(); }
+static void sched_slot_en_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_en[g_sched_day_idx][g_sched_slot_idx] = !g_ready_en[g_sched_day_idx][g_sched_slot_idx]; update_slot_buttons(); recompute_next_preheat(); }
+static void sched_hh_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx][g_sched_slot_idx] = (g_ready_hh[g_sched_day_idx][g_sched_slot_idx] + 1) % 24; update_time_labels(); }
+static void sched_hh_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx][g_sched_slot_idx] = (g_ready_hh[g_sched_day_idx][g_sched_slot_idx] + 23) % 24; update_time_labels(); }
+static void sched_mm_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx][g_sched_slot_idx] = (g_ready_mm[g_sched_day_idx][g_sched_slot_idx] + 5) % 60; update_time_labels(); }
+static void sched_mm_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx][g_sched_slot_idx] = (g_ready_mm[g_sched_day_idx][g_sched_slot_idx] + 55) % 60; update_time_labels(); }
 
 static void sched_skip_cb(lv_event_t* e) {
     last_touch_time = millis();
@@ -1305,6 +1358,10 @@ static void mode_toggle_cb(lv_event_t*) {
                           appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  Data: Demo"
                                                : LV_SYMBOL_EYE_OPEN "  Data: Real-time");
     }
+    // Clear colour feedback: Demo = orange, Real-time = green.
+    if (btn_app_mode != NULL) {
+        lv_obj_set_style_bg_color(btn_app_mode, appMode == MODE_DEMO ? CLR_WAITING : CLR_ON, 0);
+    }
     Serial.printf("[UI] Mode switched to: %s\n",
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 }
@@ -1369,8 +1426,8 @@ static void wizard_finish_cb(lv_event_t*) {
     g_pref_ready_mm   = wiz_ready_mm;
     // Apply the wizard's default time to the Schedule screen immediately (both
     // weekday & weekend), so it appears there and the brain uses it right away.
-    g_ready_hh[0] = g_ready_hh[1] = wiz_ready_hh;
-    g_ready_mm[0] = g_ready_mm[1] = wiz_ready_mm;
+    g_ready_hh[0][0] = g_ready_hh[1][0] = wiz_ready_hh;   // wizard sets the Morning slot
+    g_ready_mm[0][0] = g_ready_mm[1][0] = wiz_ready_mm;
     update_time_labels();
     DataManager::saveSetting("target_temp",    wiz_temp);
     DataManager::saveSetting("household_size", wiz_household);
@@ -1610,7 +1667,7 @@ static void build_schedule_page(lv_obj_t* scr) {
     // Ready-by panel
     panel_ready = lv_obj_create(left_col);
     disableScroll(panel_ready);
-    lv_obj_set_size(panel_ready, lv_pct(100), 220);
+    lv_obj_set_size(panel_ready, lv_pct(100), 270);
     lv_obj_set_style_bg_opa(panel_ready, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(panel_ready, 0, 0);
     lv_obj_set_style_pad_all(panel_ready, 0, 0);
@@ -1630,6 +1687,42 @@ static void build_schedule_page(lv_obj_t* scr) {
 
     btn_day_wk = make_seg_btn(seg_day, "Mon-Fri", sched_day_wk_cb, &lbl_day_wk);
     btn_day_we = make_seg_btn(seg_day, "Sat-Sun", sched_day_we_cb, &lbl_day_we);
+
+    // Slot row: Morning/Evening selector + On/Off toggle for the selected slot
+    lv_obj_t* slot_row = lv_obj_create(panel_ready);
+    disableScroll(slot_row);
+    lv_obj_set_size(slot_row, lv_pct(100), 48);
+    lv_obj_set_style_bg_opa(slot_row, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(slot_row, 0, 0);
+    lv_obj_set_style_pad_all(slot_row, 0, 0);
+    lv_obj_set_flex_flow(slot_row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(slot_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(slot_row, 8, 0);
+
+    lv_obj_t* seg_slot = lv_obj_create(slot_row);
+    disableScroll(seg_slot);
+    lv_obj_set_height(seg_slot, 48);
+    lv_obj_set_flex_grow(seg_slot, 1);
+    lv_obj_set_style_bg_color(seg_slot, lv_color_white(), 0);
+    lv_obj_set_style_border_width(seg_slot, 2, 0);
+    lv_obj_set_style_border_color(seg_slot, CLR_BORDER, 0);
+    lv_obj_set_style_radius(seg_slot, 14, 0);
+    lv_obj_set_style_pad_all(seg_slot, 5, 0);
+    lv_obj_set_flex_flow(seg_slot, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(seg_slot, 6, 0);
+    btn_slot_am = make_seg_btn(seg_slot, "Morning", sched_slot_am_cb, &lbl_slot_am);
+    btn_slot_pm = make_seg_btn(seg_slot, "Evening", sched_slot_pm_cb, &lbl_slot_pm);
+
+    btn_slot_en = lv_btn_create(slot_row);
+    lv_obj_set_size(btn_slot_en, 96, 48);
+    lv_obj_set_style_radius(btn_slot_en, 14, 0);
+    lv_obj_set_style_border_width(btn_slot_en, 0, 0);
+    lv_obj_add_event_cb(btn_slot_en, sched_slot_en_cb, LV_EVENT_CLICKED, NULL);
+    lbl_slot_en = lv_label_create(btn_slot_en);
+    lv_label_set_text(lbl_slot_en, LV_SYMBOL_OK "  On");
+    lv_obj_set_style_text_font(lbl_slot_en, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_slot_en, lv_color_white(), 0);
+    lv_obj_center(lbl_slot_en);
 
     lv_obj_t* time_card = lv_obj_create(panel_ready);
     disableScroll(time_card);
@@ -2355,15 +2448,15 @@ static void build_diagnostics_page(lv_obj_t* scr) {
     // Data source (Demo / Real-time) — dev & presentation control. Lives on the
     // Diagnostics (technician) screen, not on the consumer Settings screen.
     // DEMO = mock scenario data; REAL-TIME = live DS18B20 / YF-B6 / ACS758.
-    lv_obj_t* btn_ds = lv_btn_create(header);
-    lv_obj_set_height(btn_ds, 40);
-    lv_obj_set_width(btn_ds, LV_SIZE_CONTENT);
-    lv_obj_align(btn_ds, LV_ALIGN_RIGHT_MID, -16, 0);
-    lv_obj_set_style_radius(btn_ds, 12, 0);
-    lv_obj_set_style_bg_color(btn_ds, CLR_ACCENT, 0);
-    lv_obj_set_style_border_width(btn_ds, 0, 0);
-    lv_obj_add_event_cb(btn_ds, mode_toggle_cb, LV_EVENT_CLICKED, NULL);
-    lbl_app_mode = lv_label_create(btn_ds);
+    btn_app_mode = lv_btn_create(header);
+    lv_obj_set_height(btn_app_mode, 40);
+    lv_obj_set_width(btn_app_mode, LV_SIZE_CONTENT);
+    lv_obj_align(btn_app_mode, LV_ALIGN_RIGHT_MID, -16, 0);
+    lv_obj_set_style_radius(btn_app_mode, 12, 0);
+    lv_obj_set_style_bg_color(btn_app_mode, appMode == MODE_DEMO ? CLR_WAITING : CLR_ON, 0);
+    lv_obj_set_style_border_width(btn_app_mode, 0, 0);
+    lv_obj_add_event_cb(btn_app_mode, mode_toggle_cb, LV_EVENT_CLICKED, NULL);
+    lbl_app_mode = lv_label_create(btn_app_mode);
     lv_label_set_text(lbl_app_mode,
                       appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  Data: Demo"
                                            : LV_SYMBOL_EYE_OPEN "  Data: Real-time");
@@ -2428,9 +2521,9 @@ static void load_saved_preferences() {
     if (DataManager::loadSetting("ready_mm", v))        g_pref_ready_mm    = v;
     // Seed the Schedule-screen ready-by times (weekday + weekend) with the saved
     // default, so the wizard's time shows on the Schedule and drives the brain
-    // (UI_GetReadyByMinute reads g_ready_hh/mm, not g_pref_*).
-    g_ready_hh[0] = g_ready_hh[1] = g_pref_ready_hh;
-    g_ready_mm[0] = g_ready_mm[1] = g_pref_ready_mm;
+    // (UI_GetReadyByMinutes reads g_ready_hh/mm, not g_pref_*).
+    g_ready_hh[0][0] = g_ready_hh[1][0] = g_pref_ready_hh;
+    g_ready_mm[0][0] = g_ready_mm[1][0] = g_pref_ready_mm;
 }
 
 void UI_Init() {

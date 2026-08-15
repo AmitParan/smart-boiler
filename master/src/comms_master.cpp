@@ -164,7 +164,7 @@ static void sendCommand() {
             pin.unixNow       = (uint32_t)time(nullptr);
             pin.tankTempC     = last_t_internal;
             pin.mode          = (OpMode)UI_GetOpMode();
-            pin.readyByMinute = UI_GetReadyByMinute();
+            pin.readyByCount  = UI_GetReadyByMinutes(pin.readyByMinutes, 4);
             pin.household     = UI_GetHouseholdSize();
             pin.manualOn      = boiler_state;
             pin.plcConnected  = plc_ok;

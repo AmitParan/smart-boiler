@@ -24,7 +24,7 @@ void UI_UpdatePLCStatus(bool connected);
 // --- Smart-preheat interface (reads the Schedule-page operation mode) ---
 #include <stdint.h>
 uint8_t  UI_GetOpMode();         // 0=DUMB (auto off), 1=READY_BY, 2=SMART
-uint16_t UI_GetReadyByMinute();  // user "ready-by" time as minute-of-day (0..1439)
+uint8_t  UI_GetReadyByMinutes(uint16_t* out, uint8_t maxN);  // enabled ready-by times today; returns count
 uint8_t  UI_GetHouseholdSize();  // number of people (1..8)
 
 #endif

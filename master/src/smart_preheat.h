@@ -33,13 +33,14 @@ enum OpMode : uint8_t {
 };
 
 struct PreheatInputs {
-    uint32_t unixNow;        ///< epoch seconds (0/invalid => clock not synced yet)
-    float    tankTempC;      ///< current tank temperature [C]
-    OpMode   mode;           ///< current operation mode
-    uint16_t readyByMinute;  ///< minute-of-day the user wants hot water (READY_BY mode)
-    uint8_t  household;      ///< number of people (1..8) — small lead-time factor
-    bool     manualOn;       ///< user pressed ON on the touchscreen
-    bool     plcConnected;   ///< slave link healthy
+    uint32_t unixNow;            ///< epoch seconds (0/invalid => clock not synced yet)
+    float    tankTempC;          ///< current tank temperature [C]
+    OpMode   mode;               ///< current operation mode
+    uint16_t readyByMinutes[4];  ///< enabled ready-by times, minute-of-day (READY_BY mode)
+    uint8_t  readyByCount;       ///< number of valid entries in readyByMinutes
+    uint8_t  household;          ///< number of people (1..8) — small lead-time factor
+    bool     manualOn;           ///< user pressed ON on the touchscreen
+    bool     plcConnected;       ///< slave link healthy
 };
 
 namespace SmartPreheat {

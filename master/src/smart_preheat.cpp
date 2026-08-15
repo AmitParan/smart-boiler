@@ -123,31 +123,40 @@ void SmartPreheat::update(const PreheatInputs& in) {
     // 3. Respect the user: a manual ON means they are in control — stay out.
     if (in.manualOn)               return;
 
-    // 3. Pick the target shower minute for the active mode.
-    uint16_t targetMinute;
+    // 3. Build the list of candidate shower times for the active mode.
+    //    READY_BY: every enabled slot (Morning/Evening). SMART: the learned peak.
+    uint16_t targets[4];
+    uint8_t  nt = 0;
     if (in.mode == OP_READY_BY) {
-        targetMinute = in.readyByMinute % 1440u;
+        for (uint8_t i = 0; i < in.readyByCount && nt < 4; i++) {
+            targets[nt++] = in.readyByMinutes[i] % 1440u;
+        }
+        if (nt == 0) return;                 // no enabled slots — nothing to do
     } else { // OP_SMART
         if (!isReliable())         return;   // still learning — do nothing yet
-        targetMinute = predictedMinute();
-        if (targetMinute == 0xFFFFu) return;
+        uint16_t p = predictedMinute();
+        if (p == 0xFFFFu)          return;
+        targets[nt++] = p;
     }
 
-    // 4. Are we inside the preheat window [target - lead, target + grace]?
+    // 4. Heat if we are inside ANY target's window [target - lead, target + grace].
     //    - lead:  heat ahead so the tank is warm by the shower time.
     //    - grace: stay on through the shower so the boost heater can fire even
     //             if the shower starts a little later than predicted.
     time_t t = (time_t)in.unixNow;
     struct tm tmv; localtime_r(&t, &tmv);
-    uint16_t nowMinute   = (uint16_t)(tmv.tm_hour * 60 + tmv.tm_min);
-    uint16_t untilTarget = minutesUntil(nowMinute, targetMinute);  // >0 before target
-    uint16_t sinceTarget = minutesUntil(targetMinute, nowMinute);  // >0 after target
-    uint16_t lead        = leadFor(in.household);
+    uint16_t nowMinute = (uint16_t)(tmv.tm_hour * 60 + tmv.tm_min);
+    uint16_t lead      = leadFor(in.household);
 
-    if (untilTarget <= lead || sinceTarget <= SHOWER_GRACE_MIN) {
-        // Within the window: request heat. SystemManager regulates to 40 C and
-        // drops to STANDBY once reached, so the tank cannot overheat here.
-        s_wantsHeat = true;
+    for (uint8_t i = 0; i < nt; i++) {
+        uint16_t untilTarget = minutesUntil(nowMinute, targets[i]);  // >0 before target
+        uint16_t sinceTarget = minutesUntil(targets[i], nowMinute);  // >0 after target
+        if (untilTarget <= lead || sinceTarget <= SHOWER_GRACE_MIN) {
+            // SystemManager regulates to 40 C and drops to STANDBY once reached,
+            // so the tank cannot overheat here.
+            s_wantsHeat = true;
+            break;
+        }
     }
     (void)PREHEAT_TARGET_C;  // documented target; regulation lives in SystemManager
 }
