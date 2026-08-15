@@ -1367,6 +1367,11 @@ static void wizard_finish_cb(lv_event_t*) {
     g_pref_household = wiz_household;
     g_pref_ready_hh   = wiz_ready_hh;
     g_pref_ready_mm   = wiz_ready_mm;
+    // Apply the wizard's default time to the Schedule screen immediately (both
+    // weekday & weekend), so it appears there and the brain uses it right away.
+    g_ready_hh[0] = g_ready_hh[1] = wiz_ready_hh;
+    g_ready_mm[0] = g_ready_mm[1] = wiz_ready_mm;
+    update_time_labels();
     DataManager::saveSetting("target_temp",    wiz_temp);
     DataManager::saveSetting("household_size", wiz_household);
     DataManager::saveSetting("ready_hh",       wiz_ready_hh);
@@ -2421,6 +2426,11 @@ static void load_saved_preferences() {
     if (DataManager::loadSetting("household_size", v)) g_pref_household   = v;
     if (DataManager::loadSetting("ready_hh", v))        g_pref_ready_hh    = v;
     if (DataManager::loadSetting("ready_mm", v))        g_pref_ready_mm    = v;
+    // Seed the Schedule-screen ready-by times (weekday + weekend) with the saved
+    // default, so the wizard's time shows on the Schedule and drives the brain
+    // (UI_GetReadyByMinute reads g_ready_hh/mm, not g_pref_*).
+    g_ready_hh[0] = g_ready_hh[1] = g_pref_ready_hh;
+    g_ready_mm[0] = g_ready_mm[1] = g_pref_ready_mm;
 }
 
 void UI_Init() {
