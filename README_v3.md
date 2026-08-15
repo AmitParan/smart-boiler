@@ -1,8 +1,54 @@
-# Smart Boiler — Project README (Branch: v7)
+# Smart Boiler — Project README (Branch: v9_merge)
 
-Last updated: July 2026  
-Git branch: `v7`  
-Last commit: `41c3669` — fix(slave): S8 uncommanded-current always active in DEMO; REALTIME only when sensor calibrated
+Last updated: August 2026  
+Git branch: `v9_merge` (integrated: scenario-alignment + smart-learning + UI)  
+
+> Sections 1–11 below describe the stable v7 baseline. The **v9 changes** and the
+> **TODO** are summarised immediately below.
+
+---
+
+## 0. v9_merge — What changed (latest)
+
+**Firmware alignment (from `feature/scenario-alignment`)**
+- FreeRTOS mutexes renamed `mutex_* → guard_*` (project book Table 15 / §9.1.9).
+- 8 demo scenarios aligned to the MATLAB `Models/` values & timings (book §9.1.8/10).
+- SystemManager: `BOOST_CUTOFF_C 45→42 °C`, `FLOW_THRESHOLD_LPM 0.5→1.0`.
+- Slave HW-interlock sim `86→85 °C`; PLC watchdog (BUG-2/SW-1) — `plcConnected`
+  now a real 5 s STATUS-timeout, not hardcoded.
+- Added the authoritative `Matlab/` simulation suite (8 scenarios + `boiler_params.m`).
+
+**Self-learning "brain" (from `feature/smart-learning`, master only)**
+- `smart_preheat.{h,cpp}` — deterministic decision-tree: a 96-slot (15-min) shower
+  histogram (persisted to SPIFFS `/preheat.json`), reliable after ≥7 days & a slot
+  seen ≥3×, then auto pre-heats ~45 min before the predicted time. Safety: stands
+  down on manual ON, PLC loss (>5 s), or tank ≥80 °C.
+
+**UI (master)**
+- **3-way operation mode** on Schedule: **Manual / Ready-by / Smart** (replaces the
+  old Auto-toggle + 2-way selector). Manual hides the pre-heat/skip column.
+- **Ready-by supports two daily slots** — **Morning + Evening** per day-type, each
+  with an On/Off toggle. Brain pre-heats before any enabled slot.
+- **Demo/Real-time** toggle moved **Settings → Diagnostics**, renamed **"Data source"**,
+  colour-coded (orange = Demo, green = Real-time).
+- Pre-heat lead time display aligned to the brain (**45 min**).
+- Wizard default ready-by time now seeds the Schedule + brain.
+- Day-type labels: **Sun–Thu** (week) / **Fri–Sat** (weekend) — Israeli work week.
+
+## 0.1 TODO — next steps
+
+- [ ] **Compile-verify `v9_merge`** in PlatformIO (master + slave) — the v9 UI/brain
+      changes have not yet been built on a real toolchain.
+- [ ] **Week / weekend definition:** week = **Sunday–Thursday**, weekend =
+      **Friday–Saturday** (Israeli). Logic already uses this; UI labels now match —
+      keep this convention anywhere day-of-week is added.
+- [ ] **Setup wizard:** add a **second (Evening) time** picker so onboarding can set
+      both slots (currently the wizard sets the Morning default only; the Evening
+      slot is set on the Schedule screen).
+- [ ] **Smart panel:** show live learning progress ("N / 7 days") on the UI.
+- [ ] **Adaptive lead time (V2):** replace the fixed 45-min lead with a measured
+      heat-up rate; optionally fold in weather (colder inlet → start earlier).
+- [ ] Update UI chapter figures/text in the project book to match the v9 screens.
 
 ---
 

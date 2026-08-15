@@ -1685,8 +1685,8 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_set_flex_flow(seg_day, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(seg_day, 6, 0);
 
-    btn_day_wk = make_seg_btn(seg_day, "Mon-Fri", sched_day_wk_cb, &lbl_day_wk);
-    btn_day_we = make_seg_btn(seg_day, "Sat-Sun", sched_day_we_cb, &lbl_day_we);
+    btn_day_wk = make_seg_btn(seg_day, "Sun-Thu", sched_day_wk_cb, &lbl_day_wk);   // Israeli work week
+    btn_day_we = make_seg_btn(seg_day, "Fri-Sat", sched_day_we_cb, &lbl_day_we);   // Israeli weekend
 
     // Slot row: Morning/Evening selector + On/Off toggle for the selected slot
     lv_obj_t* slot_row = lv_obj_create(panel_ready);
