@@ -39,7 +39,7 @@ using namespace esp_panel::board;
 #define CLR_DIAG_BG  lv_color_hex(0x263238)  // diagnostics card background
 #define CLR_DIAG_HDR lv_color_hex(0x37474F)  // diagnostics header background
 
-static const int LEAD_TIME_MIN = 15;  // assumed pre-heat lead time for schedule math
+static const int LEAD_TIME_MIN = 45;  // pre-heat lead time — matches SmartPreheat BASE_LEAD_MIN (smart_preheat.cpp)
 
 // ---------------------------------------------------------------------------
 //  Page containers (each 800x480, shown/hidden — only one visible at a time)
