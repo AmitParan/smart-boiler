@@ -27,7 +27,7 @@
 //  State priority (highest → lowest):
 //    SAFETY_OVERRIDE   — PLC lost OR currentTemp >= 85 °C
 //    STATE_OFF         — user switched boiler OFF
-//    STATE_SHOWER_BOOST — tap open (flow > 0.5 L/min) → boost only
+//    STATE_SHOWER_BOOST — tap open (flow > 1.0 L/min) → boost only
 //    STATE_HEATING_TANK — no flow, tank below base temp → internal only
 //    STATE_STANDBY     — no flow, tank warm enough → all off, waiting
 // ===========================================================================
@@ -36,9 +36,9 @@
 //  Constants
 // ---------------------------------------------------------------------------
 static constexpr float   TEMP_CUTOFF_C      = 85.0f;  ///< Hard safety trip
-static constexpr float   FLOW_THRESHOLD_LPM =  0.5f;  ///< Min flow to trigger boost
+static constexpr float   FLOW_THRESHOLD_LPM =  1.0f;  ///< Min flow to trigger boost (Models Flow_Min_LPM=1; matches slave boost interlock)
 static constexpr float   TARGET_TANK_TEMP   = 40.0f;  ///< Base tank temp (energy-saving)
-static constexpr float   BOOST_CUTOFF_C     = 45.0f;  ///< Tank temp above which boost is not needed
+static constexpr float   BOOST_CUTOFF_C     = 42.0f;  ///< Boost dynamic target (Models S3 T_target_logic=42)
 static constexpr uint8_t PWM_MAX            = 100u;   ///< 100 % on the wire
 static constexpr uint8_t PWM_OFF            =   0u;
 

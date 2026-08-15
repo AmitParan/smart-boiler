@@ -43,10 +43,11 @@ static SystemManager s_manager;
 // Used by sendCommand() to override the state label in demo mode.
 static bool slave_has_fault = false;
 
-// PLC connection watchdog: in REALTIME, plcConnected is derived from how
-// recently a valid STATUS arrived (not hardcoded). Feeds SystemManager AND the
-// smart-preheat brain, so a 5 s link loss forces SAFETY_OVERRIDE and stands the
-// brain down. Before the first STATUS the link is treated as disconnected.
+// PLC connection watchdog (BUG-2 / SW-1): in REALTIME, plcConnected is derived
+// from how recently a valid STATUS arrived (not hardcoded). Feeds SystemManager
+// AND the smart-preheat brain, so a 5 s link loss forces SAFETY_OVERRIDE and
+// stands the brain down. Before the first STATUS the link is treated as
+// disconnected. Matches book section 10 (5s no-STATUS -> SAFETY_OVERRIDE).
 static const uint32_t PLC_TIMEOUT_MS = 5000u;
 static uint32_t last_status_ms = 0u;
 static bool     status_ever    = false;
@@ -147,7 +148,6 @@ static void sendCommand() {
     } else {
         inputs.currentTemp  = last_t_internal;
         inputs.flowRateLPM  = last_flow;
-
         // PLC watchdog: the link is "connected" only if a STATUS arrived within
         // the timeout. Fail-safe before the first STATUS (status_ever == false).
         bool plc_ok = status_ever && (millis() - last_status_ms < PLC_TIMEOUT_MS);

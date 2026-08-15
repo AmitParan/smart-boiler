@@ -23,7 +23,7 @@ const char* SystemManager::labelFor(BoilerState state) {
 //  --------  ------------------  -----------------------------------------
 //  1 (HIGH)  SAFETY_OVERRIDE     !plcConnected  OR  currentTemp >= 85 °C
 //  2         STATE_OFF           !uiStateOn
-//  3         STATE_SHOWER_BOOST  flowRateLPM > 0.5  →  boost=100, internal=0
+//  3         STATE_SHOWER_BOOST  flowRateLPM > 1.0  →  boost=100, internal=0
 //  4         STATE_HEATING_TANK  no flow AND currentTemp < TARGET_TANK_TEMP
 //                                →  internal=100, boost=0
 //  5 (LOW)   STATE_STANDBY       no flow AND currentTemp >= TARGET_TANK_TEMP

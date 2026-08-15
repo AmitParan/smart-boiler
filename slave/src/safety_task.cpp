@@ -52,7 +52,7 @@ void TaskSafety(void* pvParameters) {
                                       i, local_temps[i]);
                         overheat_logged = true;
                     }
-                    if (local_temps[i] >= 86.0f && !hw_interlock_logged) {
+                    if (local_temps[i] >= 85.0f && !hw_interlock_logged) {
                         Serial.println("[SLAVE] \xe2\x9d\x8c HARDWARE INTERLOCK TRIP! (LM393N Simulation) -> CURRENT FORCED TO 0.0A!");
                         hw_interlock_logged = true;
                     }
