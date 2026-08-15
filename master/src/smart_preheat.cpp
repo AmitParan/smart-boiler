@@ -30,6 +30,7 @@ constexpr uint16_t PER_PERSON_MIN   = 5u;    // + minutes per person above 2
 constexpr uint16_t MAX_LEAD_MIN     = 90u;
 constexpr uint16_t SHOWER_GRACE_MIN = 45u;   // stay ready this long AFTER target (covers the shower)
 constexpr float    PREHEAT_TARGET_C = 40.0f; // tank base target (matches SystemManager)
+constexpr float    SAFETY_TEMP_C    = 80.0f; // brain stands down at/above this (defense in depth)
 
 bool s_wantsHeat = false;
 
@@ -111,10 +112,15 @@ void SmartPreheat::update(const PreheatInputs& in) {
 
     // 1. Brain is idle in DUMB mode, or when the link/clock is unusable.
     if (in.mode == OP_DUMB)        return;
-    if (!in.plcConnected)          return;
+    if (!in.plcConnected)          return;   // PLC link lost (>5s) — stand down
     if (in.unixNow < 100000UL)     return;   // NTP clock not synced yet
 
-    // 2. Respect the user: a manual ON means they are in control — stay out.
+    // 2. Safety first: if the tank is already hot, stand aside and let the
+    //    controller's hard protections handle it (SystemManager cuts at 85 C,
+    //    slave software at 80 C). Never request preheat into an over-temp.
+    if (in.tankTempC >= SAFETY_TEMP_C) return;
+
+    // 3. Respect the user: a manual ON means they are in control — stay out.
     if (in.manualOn)               return;
 
     // 3. Pick the target shower minute for the active mode.

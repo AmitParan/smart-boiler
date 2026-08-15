@@ -46,14 +46,20 @@ so it survives reboots and accumulates over 1–2 weeks.
 
 ```
 s_wantsHeat = false
-if mode == DUMB            → return          # brain idle
-if !plcConnected           → return          # no link
-if clock not synced        → return          # need real time
-if user pressed ON         → return          # respect manual control
+if mode == DUMB              → return   # brain idle
+if PLC link lost (>5 s)      → return   # safety: stand down (watchdog)
+if clock not synced          → return   # need real time
+if tank temp >= 80 C         → return   # safety: hand off to hard protections
+if user pressed ON           → return   # respect manual control
 target = (mode==READY_BY) ? user_time : learned_peak
-if SMART and not reliable  → return          # still learning
+if SMART and not reliable    → return   # still learning
 if now within [target − lead, target + grace] → s_wantsHeat = true
 ```
+
+Safety & user priority always win: a manual action, a **PLC timeout > 5 s**
+(watchdog in `comms_master`, feeds `plcConnected`), or an **over-temp (≥ 80 °C
+at the brain; SystemManager hard-cuts at 85 °C)** bypass the engine and return
+control to the controller's hard protections.
 
 `comms_master` then sets `uiStateOn = manual_on || wantsHeat()`.
 
@@ -85,4 +91,9 @@ if now within [target − lead, target + grace] → s_wantsHeat = true
   passing or an event-injection test hook.
 - **UI feedback** (showing predicted time / "learning… N/7 days" on the Smart panel)
   is a small follow-up; the control path (modes → real behaviour) is wired.
+- **Time-of-day only** — the learning histogram aggregates all days into one
+  96-slot model (it does not separate weekday vs weekend showers). Ready-by mode
+  *does* distinguish weekday/weekend. Per-day-of-week learning is a clean V2.
+- The decision engine is a **periodic 60 s routine inside `TaskMasterComms`**, not
+  a standalone FreeRTOS task (functionally equivalent; could be split out later).
 - **Skip-today** button is not yet gated into the brain.
