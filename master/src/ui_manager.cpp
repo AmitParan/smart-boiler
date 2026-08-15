@@ -106,14 +106,16 @@ static lv_obj_t* lbl_save_modal_ssid = NULL;
 //  Widget pointers — Schedule
 // ---------------------------------------------------------------------------
 static lv_obj_t* sched_body         = NULL;
-static lv_obj_t* btn_sched_auto     = NULL;
-static lv_obj_t* lbl_sched_auto     = NULL;
+static lv_obj_t* btn_mode_manual    = NULL;
+static lv_obj_t* lbl_mode_manual    = NULL;
 static lv_obj_t* btn_mode_smart     = NULL;
 static lv_obj_t* lbl_mode_smart     = NULL;
 static lv_obj_t* btn_mode_ready     = NULL;
 static lv_obj_t* lbl_mode_ready     = NULL;
 static lv_obj_t* panel_ready        = NULL;
 static lv_obj_t* panel_smart        = NULL;
+static lv_obj_t* panel_manual       = NULL;
+static lv_obj_t* sched_right_col    = NULL;
 static lv_obj_t* btn_day_wk         = NULL;
 static lv_obj_t* lbl_day_wk         = NULL;
 static lv_obj_t* btn_day_we         = NULL;
@@ -713,7 +715,7 @@ static void update_auto_badge() {
     if (btn_auto_badge == NULL || lbl_auto_badge == NULL) return;
     if (!g_auto_enabled) {
         lv_obj_set_style_bg_color(btn_auto_badge, lv_palette_main(LV_PALETTE_GREY), 0);
-        lv_label_set_text(lbl_auto_badge, LV_SYMBOL_CHARGE "  Auto Off");
+        lv_label_set_text(lbl_auto_badge, LV_SYMBOL_CHARGE "  Manual");
         return;
     }
     int total = g_ready_hh[g_sched_day_idx] * 60 + g_ready_mm[g_sched_day_idx] - LEAD_TIME_MIN;
@@ -751,32 +753,39 @@ static void update_day_buttons() {
     if (lbl_day_we != NULL) lv_obj_set_style_text_color(lbl_day_we, !wk ? lv_color_white() : CLR_TEXT, 0);
 }
 
+// Three explicit operation modes, driven by one 3-way selector:
+//   Manual   : g_auto_enabled = false                 (reactive — Home power button)
+//   Ready-by : g_auto_enabled = true,  g_smart_learn = false
+//   Smart    : g_auto_enabled = true,  g_smart_learn = true
 static void update_mode_buttons() {
-    if (btn_mode_smart != NULL) lv_obj_set_style_bg_color(btn_mode_smart, g_smart_learn ? CLR_ACCENT : lv_color_white(), 0);
-    if (lbl_mode_smart != NULL) lv_obj_set_style_text_color(lbl_mode_smart, g_smart_learn ? lv_color_white() : CLR_TEXT, 0);
-    if (btn_mode_ready != NULL) lv_obj_set_style_bg_color(btn_mode_ready, !g_smart_learn ? CLR_ACCENT : lv_color_white(), 0);
-    if (lbl_mode_ready != NULL) lv_obj_set_style_text_color(lbl_mode_ready, !g_smart_learn ? lv_color_white() : CLR_TEXT, 0);
-    if (panel_ready != NULL) { if (g_smart_learn) lv_obj_add_flag(panel_ready, LV_OBJ_FLAG_HIDDEN); else lv_obj_clear_flag(panel_ready, LV_OBJ_FLAG_HIDDEN); }
-    if (panel_smart != NULL) { if (g_smart_learn) lv_obj_clear_flag(panel_smart, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(panel_smart, LV_OBJ_FLAG_HIDDEN); }
+    bool manual = !g_auto_enabled;
+    bool ready  =  g_auto_enabled && !g_smart_learn;
+    bool smart  =  g_auto_enabled &&  g_smart_learn;
+
+    if (btn_mode_manual != NULL) lv_obj_set_style_bg_color(btn_mode_manual, manual ? CLR_ACCENT : lv_color_white(), 0);
+    if (lbl_mode_manual != NULL) lv_obj_set_style_text_color(lbl_mode_manual, manual ? lv_color_white() : CLR_TEXT, 0);
+    if (btn_mode_ready  != NULL) lv_obj_set_style_bg_color(btn_mode_ready,  ready  ? CLR_ACCENT : lv_color_white(), 0);
+    if (lbl_mode_ready  != NULL) lv_obj_set_style_text_color(lbl_mode_ready,  ready  ? lv_color_white() : CLR_TEXT, 0);
+    if (btn_mode_smart  != NULL) lv_obj_set_style_bg_color(btn_mode_smart,  smart  ? CLR_ACCENT : lv_color_white(), 0);
+    if (lbl_mode_smart  != NULL) lv_obj_set_style_text_color(lbl_mode_smart,  smart  ? lv_color_white() : CLR_TEXT, 0);
+
+    if (panel_manual != NULL) { if (manual) lv_obj_clear_flag(panel_manual, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(panel_manual, LV_OBJ_FLAG_HIDDEN); }
+    if (panel_ready  != NULL) { if (ready)  lv_obj_clear_flag(panel_ready,  LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(panel_ready,  LV_OBJ_FLAG_HIDDEN); }
+    if (panel_smart  != NULL) { if (smart)  lv_obj_clear_flag(panel_smart,  LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(panel_smart,  LV_OBJ_FLAG_HIDDEN); }
+
+    // Right column (next pre-heat + skip-today) is meaningless in Manual mode.
+    if (sched_right_col != NULL) { if (manual) lv_obj_add_flag(sched_right_col, LV_OBJ_FLAG_HIDDEN); else lv_obj_clear_flag(sched_right_col, LV_OBJ_FLAG_HIDDEN); }
 }
 
-static void sched_mode_smart_cb(lv_event_t* e) { last_touch_time = millis(); g_smart_learn = true;  update_mode_buttons(); }
-static void sched_mode_ready_cb(lv_event_t* e) { last_touch_time = millis(); g_smart_learn = false; update_mode_buttons(); }
+static void sched_mode_manual_cb(lv_event_t* e) { last_touch_time = millis(); g_auto_enabled = false;                        update_mode_buttons(); update_auto_badge(); }
+static void sched_mode_ready_cb (lv_event_t* e) { last_touch_time = millis(); g_auto_enabled = true;  g_smart_learn = false; update_mode_buttons(); update_auto_badge(); }
+static void sched_mode_smart_cb (lv_event_t* e) { last_touch_time = millis(); g_auto_enabled = true;  g_smart_learn = true;  update_mode_buttons(); update_auto_badge(); }
 static void sched_day_wk_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_day_idx = 0; update_day_buttons(); update_time_labels(); }
 static void sched_day_we_cb(lv_event_t* e) { last_touch_time = millis(); g_sched_day_idx = 1; update_day_buttons(); update_time_labels(); }
 static void sched_hh_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx] = (g_ready_hh[g_sched_day_idx] + 1) % 24; update_time_labels(); }
 static void sched_hh_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_hh[g_sched_day_idx] = (g_ready_hh[g_sched_day_idx] + 23) % 24; update_time_labels(); }
 static void sched_mm_up_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx] = (g_ready_mm[g_sched_day_idx] + 5) % 60; update_time_labels(); }
 static void sched_mm_dn_cb(lv_event_t* e) { last_touch_time = millis(); g_ready_mm[g_sched_day_idx] = (g_ready_mm[g_sched_day_idx] + 55) % 60; update_time_labels(); }
-
-static void sched_auto_toggle_cb(lv_event_t* e) {
-    last_touch_time = millis();
-    g_auto_enabled = !g_auto_enabled;
-    if (btn_sched_auto != NULL) lv_obj_set_style_bg_color(btn_sched_auto, g_auto_enabled ? lv_palette_main(LV_PALETTE_GREEN) : lv_palette_main(LV_PALETTE_GREY), 0);
-    if (lbl_sched_auto != NULL) lv_label_set_text(lbl_sched_auto, g_auto_enabled ? LV_SYMBOL_CHARGE "  Auto: ON" : LV_SYMBOL_CHARGE "  Auto: OFF");
-    if (sched_body     != NULL) lv_obj_set_style_opa(sched_body, g_auto_enabled ? LV_OPA_COVER : LV_OPA_50, 0);
-    update_auto_badge();
-}
 
 static void sched_skip_cb(lv_event_t* e) {
     last_touch_time = millis();
@@ -1558,20 +1567,6 @@ static void build_schedule_page(lv_obj_t* scr) {
     make_back_btn(header, page_settings);
     make_header_title(header, LV_SYMBOL_LIST "  Schedule");
 
-    btn_sched_auto = lv_btn_create(header);
-    lv_obj_set_width(btn_sched_auto, LV_SIZE_CONTENT);
-    lv_obj_set_height(btn_sched_auto, 48);
-    lv_obj_set_style_radius(btn_sched_auto, 24, 0);
-    lv_obj_set_style_bg_color(btn_sched_auto, lv_palette_main(LV_PALETTE_GREEN), 0);
-    lv_obj_set_style_border_width(btn_sched_auto, 0, 0);
-    lv_obj_set_style_pad_hor(btn_sched_auto, 18, 0);
-    lv_obj_add_event_cb(btn_sched_auto, sched_auto_toggle_cb, LV_EVENT_CLICKED, NULL);
-    lbl_sched_auto = lv_label_create(btn_sched_auto);
-    lv_label_set_text(lbl_sched_auto, LV_SYMBOL_CHARGE "  Auto: ON");
-    lv_obj_set_style_text_font(lbl_sched_auto, &lv_font_montserrat_18, 0);
-    lv_obj_set_style_text_color(lbl_sched_auto, lv_color_white(), 0);
-    lv_obj_center(lbl_sched_auto);
-
     sched_body = lv_obj_create(page_schedule);
     disableScroll(sched_body);
     lv_obj_set_size(sched_body, 800, 416);
@@ -1603,8 +1598,9 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_set_flex_flow(seg_mode, LV_FLEX_FLOW_ROW);
     lv_obj_set_style_pad_column(seg_mode, 6, 0);
 
-    btn_mode_smart = make_seg_btn(seg_mode, "Smart learn", sched_mode_smart_cb, &lbl_mode_smart);
-    btn_mode_ready = make_seg_btn(seg_mode, "Ready by", sched_mode_ready_cb, &lbl_mode_ready);
+    btn_mode_manual = make_seg_btn(seg_mode, "Manual",   sched_mode_manual_cb, &lbl_mode_manual);
+    btn_mode_ready  = make_seg_btn(seg_mode, "Ready-by", sched_mode_ready_cb,  &lbl_mode_ready);
+    btn_mode_smart  = make_seg_btn(seg_mode, "Smart",    sched_mode_smart_cb,  &lbl_mode_smart);
 
     // Ready-by panel
     panel_ready = lv_obj_create(left_col);
@@ -1685,7 +1681,7 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_set_style_text_color(colon, CLR_SUBTEXT, 0);
     make_stepper(sched_mm_up_cb, sched_mm_dn_cb, &lbl_mm);
 
-    // Smart-learn panel (placeholder — no learning backend on this branch yet)
+    // Smart-learn panel — learning status
     panel_smart = lv_obj_create(left_col);
     disableScroll(panel_smart);
     lv_obj_set_size(panel_smart, lv_pct(100), 220);
@@ -1711,9 +1707,11 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_align(learn_title, LV_ALIGN_TOP_LEFT, 0, 0);
 
     lv_obj_t* learn_sub = lv_label_create(learn_card);
-    lv_label_set_text(learn_sub, "Not available yet on this firmware build.");
+    lv_label_set_text(learn_sub, "Learning your shower times. Auto pre-heat begins after about 7 days of use.");
     lv_obj_set_style_text_font(learn_sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(learn_sub, CLR_SUBTEXT, 0);
+    lv_obj_set_width(learn_sub, lv_pct(100));
+    lv_label_set_long_mode(learn_sub, LV_LABEL_LONG_WRAP);
     lv_obj_align(learn_sub, LV_ALIGN_TOP_LEFT, 0, 26);
 
     lv_obj_t* learn_bar = lv_obj_create(learn_card);
@@ -1724,8 +1722,40 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_set_style_border_width(learn_bar, 0, 0);
     lv_obj_set_style_radius(learn_bar, 7, 0);
 
+    // Manual-mode panel — no auto pre-heat; user controls the boiler from Home.
+    panel_manual = lv_obj_create(left_col);
+    disableScroll(panel_manual);
+    lv_obj_set_size(panel_manual, lv_pct(100), 220);
+    lv_obj_set_style_bg_opa(panel_manual, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(panel_manual, 0, 0);
+    lv_obj_set_style_pad_all(panel_manual, 0, 0);
+    lv_obj_add_flag(panel_manual, LV_OBJ_FLAG_HIDDEN);
+
+    lv_obj_t* manual_card = lv_obj_create(panel_manual);
+    disableScroll(manual_card);
+    lv_obj_set_size(manual_card, lv_pct(100), 130);
+    lv_obj_set_style_bg_color(manual_card, lv_color_white(), 0);
+    lv_obj_set_style_border_width(manual_card, 2, 0);
+    lv_obj_set_style_border_color(manual_card, CLR_BORDER, 0);
+    lv_obj_set_style_radius(manual_card, 18, 0);
+    lv_obj_set_style_pad_all(manual_card, 16, 0);
+
+    lv_obj_t* manual_title = lv_label_create(manual_card);
+    lv_label_set_text(manual_title, "Manual control");
+    lv_obj_set_style_text_font(manual_title, &lv_font_montserrat_18, 0);
+    lv_obj_align(manual_title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    lv_obj_t* manual_sub = lv_label_create(manual_card);
+    lv_label_set_text(manual_sub, "No automatic pre-heat. Turn the boiler on or off yourself from the Home screen.");
+    lv_obj_set_style_text_font(manual_sub, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(manual_sub, CLR_SUBTEXT, 0);
+    lv_obj_set_width(manual_sub, lv_pct(100));
+    lv_label_set_long_mode(manual_sub, LV_LABEL_LONG_WRAP);
+    lv_obj_align(manual_sub, LV_ALIGN_TOP_LEFT, 0, 28);
+
     // --- Right column: next pre-heat estimate + skip-today ---
     lv_obj_t* right_col = lv_obj_create(sched_body);
+    sched_right_col = right_col;
     disableScroll(right_col);
     lv_obj_set_size(right_col, 392, lv_pct(100));
     lv_obj_set_style_bg_opa(right_col, LV_OPA_TRANSP, 0);
