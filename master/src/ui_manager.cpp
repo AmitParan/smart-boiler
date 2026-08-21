@@ -39,7 +39,7 @@ using namespace esp_panel::board;
 #define CLR_DIAG_BG  lv_color_hex(0x263238)  // diagnostics card background
 #define CLR_DIAG_HDR lv_color_hex(0x37474F)  // diagnostics header background
 
-static const int LEAD_TIME_MIN = 45;  // pre-heat lead time — matches SmartPreheat BASE_LEAD_MIN (smart_preheat.cpp)
+static const int LEAD_TIME_MIN = 45;  // typical lead for the on-screen estimate only; the real lead is adaptive (smart_preheat.cpp)
 
 // ---------------------------------------------------------------------------
 //  Page containers (each 800x480, shown/hidden — only one visible at a time)
@@ -1884,8 +1884,8 @@ static void build_schedule_page(lv_obj_t* scr) {
     lv_obj_align(lbl_next_preheat, LV_ALIGN_TOP_LEFT, 0, 32);
 
     lv_obj_t* next_sub = lv_label_create(next_card);
-    char lead_buf[40];
-    snprintf(lead_buf, sizeof(lead_buf), "%d min pre-heat lead (estimate)", LEAD_TIME_MIN);
+    char lead_buf[52];
+    snprintf(lead_buf, sizeof(lead_buf), "start adapts to water temp (~%d min typ.)", LEAD_TIME_MIN);
     lv_label_set_text(next_sub, lead_buf);
     lv_obj_set_style_text_font(next_sub, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(next_sub, CLR_SUBTEXT, 0);

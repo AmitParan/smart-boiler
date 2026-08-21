@@ -21,8 +21,10 @@ Git branch: `v9_merge` (integrated: scenario-alignment + smart-learning + UI)
 **Self-learning "brain" (from `feature/smart-learning`, master only)**
 - `smart_preheat.{h,cpp}` — deterministic decision-tree: a 96-slot (15-min) shower
   histogram (persisted to SPIFFS `/preheat.json`), reliable after ≥7 days & a slot
-  seen ≥3×, then auto pre-heats ~45 min before the predicted time. Safety: stands
-  down on manual ON, PLC loss (>5 s), or tank ≥80 °C.
+  seen ≥3×, then auto pre-heats before the predicted time. **Adaptive lead**: the
+  start time is computed from how far the tank is below 40 °C at the modelled
+  heat-up rate (~0.24 °C/min) — colder now ⇒ start earlier — clamped 10–120 min,
+  + a per-person margin. Safety: stands down on manual ON, PLC loss (>5 s), or tank ≥80 °C.
 
 **UI (master)**
 - **3-way operation mode** on Schedule: **Manual / Ready-by / Smart** (replaces the
@@ -46,8 +48,11 @@ Git branch: `v9_merge` (integrated: scenario-alignment + smart-learning + UI)
       both slots (currently the wizard sets the Morning default only; the Evening
       slot is set on the Schedule screen).
 - [ ] **Smart panel:** show live learning progress ("N / 7 days") on the UI.
-- [ ] **Adaptive lead time (V2):** replace the fixed 45-min lead with a measured
-      heat-up rate; optionally fold in weather (colder inlet → start earlier).
+- [x] **Adaptive lead time (V2):** DONE — lead is computed from the current tank
+      temperature at a modelled heat-up rate (not a fixed 45 min).
+- [ ] **Learn the heat-up rate (V3):** replace the fixed ~0.24 °C/min model with a
+      value measured from real heat-up sessions; optionally fold in weather/inlet
+      temperature (colder inlet → start earlier).
 - [ ] Update UI chapter figures/text in the project book to match the v9 screens.
 
 ---

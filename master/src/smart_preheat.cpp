@@ -21,16 +21,19 @@ uint16_t s_days    = 0u;   // distinct calendar days with >= 1 shower
 int16_t  s_lastYday = -1;  // day-of-year of the last recorded shower (day counter)
 
 // ---- Decision-tree tuning ----
-// NOTE: BASE_LEAD_MIN is a fixed approximation for V1. Heating a fully-cooled
-// 150 L tank to 40 C can take ~1.4 h from cold (project book), less if recently
-// used. V2 should replace this with an adaptive lead measured from real heat-up
-// sessions (HeatupTracker). 45 min is a pragmatic default for a daily pattern.
-constexpr uint16_t BASE_LEAD_MIN    = 45u;   // start preheat this many minutes early
-constexpr uint16_t PER_PERSON_MIN   = 5u;    // + minutes per person above 2
-constexpr uint16_t MAX_LEAD_MIN     = 90u;
-constexpr uint16_t SHOWER_GRACE_MIN = 45u;   // stay ready this long AFTER target (covers the shower)
-constexpr float    PREHEAT_TARGET_C = 40.0f; // tank base target (matches SystemManager)
-constexpr float    SAFETY_TEMP_C    = 80.0f; // brain stands down at/above this (defense in depth)
+// Adaptive pre-heat lead: the lead time is NOT fixed — it is computed from how
+// far the tank currently is below the base target, at the modelled heat-up rate.
+// A colder tank now => start earlier; an almost-warm tank => start just before.
+// HEAT_RATE_C_PER_MIN ~ 2500 W into 150 L (project book: ~1.4 h from 20->40 C,
+// i.e. ~0.24 C/min). A per-person margin and min/max clamps keep it sane. The
+// rate can later be learned from real heat-up sessions (HeatupTracker, V3).
+constexpr float    HEAT_RATE_C_PER_MIN = 0.24f;
+constexpr uint16_t PER_PERSON_MIN      = 5u;    // + safety margin per person above 2
+constexpr uint16_t MIN_LEAD_MIN        = 10u;   // never start less than this before
+constexpr uint16_t MAX_LEAD_MIN        = 120u;  // never start more than this before
+constexpr uint16_t SHOWER_GRACE_MIN    = 45u;   // stay ready this long AFTER target (covers the shower)
+constexpr float    PREHEAT_TARGET_C    = 40.0f; // tank base target (matches SystemManager)
+constexpr float    SAFETY_TEMP_C       = 80.0f; // brain stands down at/above this (defense in depth)
 
 bool s_wantsHeat = false;
 
@@ -53,11 +56,17 @@ uint16_t minutesUntil(uint16_t nowMin, uint16_t targetMin) {
     return (uint16_t)d;
 }
 
-uint16_t leadFor(uint8_t household) {
-    uint16_t lead = BASE_LEAD_MIN;
-    if (household > 2u) lead += (uint16_t)(household - 2u) * PER_PERSON_MIN;
+// Minutes needed to warm the tank from its current temperature up to the base
+// target, at the modelled heat-up rate (+ a small per-person safety margin).
+// This is what makes the pre-heat condition-aware rather than a fixed delay.
+uint16_t leadFor(float tankTempC, uint8_t household) {
+    float deficit = PREHEAT_TARGET_C - tankTempC;      // degrees still to gain
+    if (deficit < 0.0f) deficit = 0.0f;                // already warm enough
+    uint32_t lead = (uint32_t)(deficit / HEAT_RATE_C_PER_MIN);
+    if (household > 2u) lead += (uint32_t)(household - 2u) * PER_PERSON_MIN;
+    if (lead < MIN_LEAD_MIN) lead = MIN_LEAD_MIN;
     if (lead > MAX_LEAD_MIN) lead = MAX_LEAD_MIN;
-    return lead;
+    return (uint16_t)lead;
 }
 
 } // namespace
@@ -146,7 +155,7 @@ void SmartPreheat::update(const PreheatInputs& in) {
     time_t t = (time_t)in.unixNow;
     struct tm tmv; localtime_r(&t, &tmv);
     uint16_t nowMinute = (uint16_t)(tmv.tm_hour * 60 + tmv.tm_min);
-    uint16_t lead      = leadFor(in.household);
+    uint16_t lead      = leadFor(in.tankTempC, in.household);  // adaptive to current tank temp
 
     for (uint8_t i = 0; i < nt; i++) {
         uint16_t untilTarget = minutesUntil(nowMinute, targets[i]);  // >0 before target
@@ -158,7 +167,6 @@ void SmartPreheat::update(const PreheatInputs& in) {
             break;
         }
     }
-    (void)PREHEAT_TARGET_C;  // documented target; regulation lives in SystemManager
 }
 
 bool SmartPreheat::wantsHeat() { return s_wantsHeat; }
