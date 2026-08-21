@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 volatile SystemMode currentMode = MODE_DEMO;
+volatile bool serialModeOverride = false;
 
 void TaskSerial(void* pvParameters) {
     Serial.println("[MODE] Ready: 'd'=DEMO  'r'=REALTIME  '?'=status");
@@ -11,15 +12,18 @@ void TaskSerial(void* pvParameters) {
             switch (c) {
                 case 'd':
                     currentMode = MODE_DEMO;
-                    Serial.println("[MODE] -> DEMO (mock sensors, auto-clear faults)");
+                    serialModeOverride = true;
+                    Serial.println("[MODE] -> DEMO (serial override — master CMD will overwrite within ~1s)");
                     break;
                 case 'r':
                     currentMode = MODE_REALTIME;
-                    Serial.println("[MODE] -> REALTIME (real sensors, permanent faults)");
+                    serialModeOverride = true;
+                    Serial.println("[MODE] -> REALTIME (serial override — master CMD will overwrite within ~1s)");
                     break;
                 case '?': {
-                    Serial.printf("[MODE] Current: %s\n",
-                                  currentMode == MODE_DEMO ? "DEMO" : "REALTIME");
+                    Serial.printf("[MODE] Current: %s%s\n",
+                                  currentMode == MODE_DEMO ? "DEMO" : "REALTIME",
+                                  serialModeOverride ? " (serial override pending)" : "");
                     break;
                 }
                 default: break;

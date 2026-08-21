@@ -96,6 +96,11 @@ static void processStatusPacket(const uint8_t* raw) {
         prev_flow_edge = flow;
     }
 
+    // Always log STATUS receipt so the PLC link is visible in both modes.
+    Serial.printf("[M<-S] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
+                  pkt->sequence, t_internal, t_boiler, t_boost,
+                  flow, power_w, pkt->statusByte);
+
     // Demo mode: event-driven slave fault banner (logged ONCE per fault event)
     if (appMode == MODE_DEMO) {
         static bool slave_fault_banner_shown = false;
@@ -107,10 +112,22 @@ static void processStatusPacket(const uint8_t* raw) {
             slave_fault_banner_shown = false;
             slave_has_fault = false;
         }
+    }
+
+    // Mode-mismatch detection: warn if the slave's actual mode disagrees with
+    // what the master expects. Logged at most once per mismatch event.
+    bool slave_is_realtime = (pkt->statusByte & STATUS_MODE_REALTIME) != 0;
+    bool master_wants_realtime = (appMode == MODE_REALTIME);
+    static bool mode_mismatch_logged = false;
+    if (slave_is_realtime != master_wants_realtime) {
+        if (!mode_mismatch_logged) {
+            Serial.printf("[COMMS] WARNING: mode mismatch — master=%s slave=%s\n",
+                          master_wants_realtime ? "REALTIME" : "DEMO",
+                          slave_is_realtime     ? "REALTIME" : "DEMO");
+            mode_mismatch_logged = true;
+        }
     } else {
-        Serial.printf("[M<-S] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
-                      pkt->sequence, t_internal, t_boiler, t_boost,
-                      flow, power_w, pkt->statusByte);
+        mode_mismatch_logged = false;
     }
 
     // In REALTIME mode the UI shows actual sensor data from the slave.

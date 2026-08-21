@@ -25,6 +25,7 @@ enum SystemMode : uint8_t {
 };
 
 extern volatile SystemMode currentMode;
+extern volatile bool serialModeOverride;
 
 void TaskSerial(void* pvParameters);
 

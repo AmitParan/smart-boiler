@@ -1,6 +1,7 @@
 #include "app_mode.h"
 
-// Default to DEMO so the board is safe to run without real sensors connected.
+// Boot default is DEMO (safe without real sensors). Overwritten by
+// DataManager::loadAppMode() in setup() if a persisted mode exists.
 volatile AppMode appMode = MODE_DEMO;
 
 volatile float   demo_temp       = 35.0f;

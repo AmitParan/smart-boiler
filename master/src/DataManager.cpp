@@ -7,6 +7,7 @@
 #define MAX_LOG_ENTRIES 50  // Keep it small
 #define WATER_USAGE_FILE "/water_usage.json"
 #define PREHEAT_FILE "/preheat.json"
+#define APPMODE_FILE "/appmode.json"
 
 void DataManager::init() {
     if (!SPIFFS.begin(true)) {
@@ -331,6 +332,32 @@ bool DataManager::loadPreheat(uint16_t* counts, int slots, uint16_t& total, uint
     JsonArray arr = doc["slots"].as<JsonArray>();
     for (int i = 0; i < slots && i < (int)arr.size(); i++) counts[i] = arr[i];
     return true;
+}
+
+// ==================== App Mode Persistence ====================
+bool DataManager::saveAppMode(uint8_t mode) {
+    DynamicJsonDocument doc(64);
+    doc["mode"] = mode;
+
+    File file = SPIFFS.open(APPMODE_FILE, "w");
+    if (!file) return false;
+    serializeJson(doc, file);
+    file.close();
+    Serial.printf("[BOOT] App mode persisted: %s\n", mode == 0 ? "DEMO" : "REALTIME");
+    return true;
+}
+
+bool DataManager::loadAppMode(uint8_t& mode) {
+    if (!SPIFFS.exists(APPMODE_FILE)) return false;
+
+    File file = SPIFFS.open(APPMODE_FILE, "r");
+    DynamicJsonDocument doc(64);
+    DeserializationError error = deserializeJson(doc, file);
+    file.close();
+
+    if (error || !doc.containsKey("mode")) return false;
+    mode = doc["mode"].as<uint8_t>();
+    return (mode <= 1);
 }
 
 // ==================== Utility ====================

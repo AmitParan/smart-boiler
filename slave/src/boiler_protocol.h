@@ -40,6 +40,7 @@
 #define STATUS_INTERNAL_ON    (1u << 1)   // internal tank SSR is energised
 #define STATUS_BOOST_ON       (1u << 2)   // boost inline SSR is energised
 #define STATUS_FAULT          (1u << 3)   // safety fault is active
+#define STATUS_MODE_REALTIME  (1u << 4)   // slave is in REALTIME mode (0 = DEMO)
 
 // ---------------------------------------------------------------------------
 //  cmdFlags bit-flags  (BoilerCmdPacket_t::cmdFlags)

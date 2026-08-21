@@ -35,6 +35,10 @@ public:
     // Smart-preheat learning histogram (SmartPreheat brain)
     static bool savePreheat(const uint16_t* counts, int slots, uint16_t total, uint16_t days, int16_t lastYday);
     static bool loadPreheat(uint16_t* counts, int slots, uint16_t& total, uint16_t& days, int16_t& lastYday);
+
+    // App mode persistence (DEMO / REALTIME survives reboot)
+    static bool saveAppMode(uint8_t mode);
+    static bool loadAppMode(uint8_t& mode);
     
     // Utility
     static void printStorageInfo();

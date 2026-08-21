@@ -82,6 +82,18 @@ void setup() {
     
     // 0. Initialize data storage (SPIFFS)
     DataManager::init();
+
+    // Restore persisted app mode (DEMO / REALTIME). If no file exists yet
+    // (first boot), the default MODE_DEMO from app_mode.cpp stands.
+    uint8_t saved_mode = 0;
+    if (DataManager::loadAppMode(saved_mode)) {
+        appMode = (AppMode)saved_mode;
+        Serial.printf("[BOOT] Restored persisted mode: %s\n",
+                      appMode == MODE_DEMO ? "DEMO" : "REALTIME");
+    } else {
+        Serial.println("[BOOT] No persisted mode — defaulting to DEMO");
+    }
+
     // Load the smart-preheat learning history (must come after SPIFFS is up).
     SmartPreheat::init();
     WiFi.persistent(false);
@@ -130,13 +142,15 @@ void setup() {
     }
 
     // 3. Start PLC communication task (always — mode switching is runtime)
-    Serial.printf("[BOOT] Starting in %s mode\n",
+    Serial.printf("[BOOT] Starting in %s mode (persisted)\n",
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
     // PLC comms on Core 0 — completely isolated from LVGL (Core 1).
     // LVGL cannot preempt TaskMasterComms, eliminating inter-byte gaps.
-    xTaskCreatePinnedToCore(TaskMasterComms,        "MasterComms",  4096, NULL, 2, NULL, 0);
-    // Demo scenario runner stays on Core 1 (shares demo_* volatile vars safely)
-    xTaskCreatePinnedToCore(TaskAutomatedTestBench, "TestBench",    4096, NULL, 1, NULL, 1);
+    xTaskCreatePinnedToCore(TaskMasterComms, "MasterComms", 4096, NULL, 2, NULL, 0);
+    // Demo scenario runner stays on Core 1. It self-gates: if appMode is
+    // REALTIME it idles harmlessly (1s vTaskDelay loop, no scenario output).
+    // Only starts scenario playback when appMode == MODE_DEMO.
+    xTaskCreatePinnedToCore(TaskAutomatedTestBench, "TestBench", 4096, NULL, 1, NULL, 1);
     
     // Example: Update time periodically (you can use RTC or NTP later)
     // UI_UpdateTime(12, 30);

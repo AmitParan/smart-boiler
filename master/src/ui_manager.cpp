@@ -530,11 +530,7 @@ static void updateTargetLabels() {
 
 static void power_btn_event_cb(lv_event_t* e) {
     last_touch_time = millis();
-    // Power button is locked during demo mode — only mode switching is allowed
-    if (appMode == MODE_DEMO) {
-        Serial.println("[UI] Power button locked in DEMO mode");
-        return;
-    }
+    if (appMode == MODE_DEMO) return;
     boiler_state = !boiler_state;
     if (btn_power        != NULL) lv_obj_set_style_bg_color(btn_power, boiler_state ? CLR_ON : CLR_OFF, 0);
     if (lbl_power_status != NULL) lv_label_set_text(lbl_power_status, boiler_state ? "ON" : "OFF");
@@ -1295,10 +1291,15 @@ static void build_home_page(lv_obj_t* scr) {
     lv_obj_add_event_cb(btn_power, power_btn_event_cb, LV_EVENT_CLICKED, NULL);
 
     lbl_power_status = lv_label_create(btn_power);
-    lv_label_set_text(lbl_power_status, "OFF");
     lv_obj_set_style_text_font(lbl_power_status, &lv_font_montserrat_46, 0);
     lv_obj_set_style_text_color(lbl_power_status, lv_color_white(), 0);
     lv_obj_center(lbl_power_status);
+    if (appMode == MODE_DEMO) {
+        lv_label_set_text(lbl_power_status, "ON");
+        lv_obj_set_style_bg_color(btn_power, CLR_ON, 0);
+    } else {
+        lv_label_set_text(lbl_power_status, "OFF");
+    }
 
     lv_obj_t* shower_card = lv_obj_create(right_col);
     disableScroll(shower_card);
@@ -1346,24 +1347,54 @@ static void build_home_page(lv_obj_t* scr) {
     lv_obj_add_event_cb(page_home, screen_touched_cb, LV_EVENT_PRESSED, NULL);
 }
 
-static void mode_toggle_cb(lv_event_t*) {
-    last_touch_time = millis();
+static void apply_mode_switch() {
     appMode = (appMode == MODE_DEMO) ? MODE_REALTIME : MODE_DEMO;
-    // Clear all demo control flags when switching modes
-    demo_stop_comms  = false;
-    demo_fault_sim   = false;
+    demo_stop_comms   = false;
+    demo_fault_sim    = false;
     demo_solar_active = false;
+    demo_ui_on        = true;
+    demo_temp         = 35.0f;
+    demo_flow         = 0.0f;
     if (lbl_app_mode != NULL) {
         lv_label_set_text(lbl_app_mode,
                           appMode == MODE_DEMO ? LV_SYMBOL_PLAY "  Data: Demo"
                                                : LV_SYMBOL_EYE_OPEN "  Data: Real-time");
     }
-    // Clear colour feedback: Demo = orange, Real-time = green.
     if (btn_app_mode != NULL) {
         lv_obj_set_style_bg_color(btn_app_mode, appMode == MODE_DEMO ? CLR_WAITING : CLR_ON, 0);
     }
-    Serial.printf("[UI] Mode switched to: %s\n",
+    if (appMode == MODE_DEMO) {
+        if (btn_power        != NULL) lv_obj_set_style_bg_color(btn_power, CLR_ON, 0);
+        if (lbl_power_status != NULL) lv_label_set_text(lbl_power_status, "ON");
+    } else {
+        if (btn_power        != NULL) lv_obj_set_style_bg_color(btn_power, boiler_state ? CLR_ON : CLR_OFF, 0);
+        if (lbl_power_status != NULL) lv_label_set_text(lbl_power_status, boiler_state ? "ON" : "OFF");
+    }
+    DataManager::saveAppMode((uint8_t)appMode);
+    Serial.printf("[UI] Mode switched to: %s (persisted)\n",
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
+}
+
+static void mode_confirm_cb(lv_event_t* e) {
+    lv_obj_t* mbox = lv_event_get_current_target(e);
+    const char* btn_txt = lv_msgbox_get_active_btn_text(mbox);
+    if (btn_txt == NULL) return;
+    if (strcmp(btn_txt, "Yes") == 0) {
+        apply_mode_switch();
+    }
+    lv_msgbox_close(mbox);
+}
+
+static void mode_toggle_cb(lv_event_t*) {
+    last_touch_time = millis();
+    const char* target = (appMode == MODE_DEMO) ? "Real-time" : "Demo";
+    char msg[64];
+    snprintf(msg, sizeof(msg), "Switch to %s mode?", target);
+    static const char* btns[] = {"Yes", "Cancel", ""};
+    lv_obj_t* mbox = lv_msgbox_create(NULL, "Confirm", msg, btns, false);
+    lv_obj_set_style_text_font(mbox, &lv_font_montserrat_20, 0);
+    lv_obj_center(mbox);
+    lv_obj_add_event_cb(mbox, mode_confirm_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 // ---------------------------------------------------------------------------
