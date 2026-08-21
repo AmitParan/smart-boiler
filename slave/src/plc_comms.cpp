@@ -105,18 +105,13 @@ void PLC_SendStatus() {
         delay(2);
     }
 
-    // Serial output
+    // Serial output — keep short to avoid USB-CDC stalls on ESP32-C6
     if (currentMode == MODE_DEMO) {
-        // Demo periodic telemetry — fixed-width single line
-        // Column order: seq | SSR_INT | SSR_BST | TEMP | FLOW | PWR | CURR
-        Serial.printf("[SLAVE]  [seq=%03u] SSR_INT: %-3s | SSR_BST: %-3s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | CURR: %4.1fA\n",
-                      pkt.sequence,
-                      internal_ssr_on ? "ON " : "OFF",
-                      boost_ssr_on    ? "ON " : "OFF",
-                      local_temps[0], local_flow,
-                      (int)local_power, local_current);
+        Serial.printf("[S->M] seq=%03u | T=%4.1f | F=%4.1f | P=%4d | sts=0x%02X\n",
+                      pkt.sequence, local_temps[0], local_flow,
+                      (int)local_power, pkt.statusByte);
     } else {
-        Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
+        Serial.printf("[S->M] seq=%3u | t1=%5.1f t2=%5.1f t3=%5.1f | F=%4.1f P=%4.0fW | sts=0x%02X\n",
                       pkt.sequence,
                       local_temps[0], local_temps[1], local_temps[2],
                       local_flow, (float)pkt.powerWatts, pkt.statusByte);
@@ -273,15 +268,16 @@ bool PLC_ReceivePacket() {
                                 }
                             }
 
-                            Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",
+                            rx_state   = RX_WAIT_START;
+                            rx_buf_idx = 0u;
+                            rx_channel_free_ms = millis();
+                            // Log AFTER resetting state machine so any USB-CDC
+                            // stall doesn't cause Serial1 RX FIFO overflow.
+                            Serial.printf("[S<-M] seq=%3u | pwm=%u/%u | fl=0x%02X\n",
                                           cmd->sequence,
                                           cmd->pwmInternal,
                                           cmd->pwmBoost,
                                           cmd->cmdFlags);
-
-                            rx_state   = RX_WAIT_START;
-                            rx_buf_idx = 0u;
-                            rx_channel_free_ms = millis();
                             return true;
 
                         } else {
