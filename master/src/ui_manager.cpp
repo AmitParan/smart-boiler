@@ -543,7 +543,7 @@ static void power_btn_event_cb(lv_event_t* e) {
 
 static void temp_up_btn_event_cb(lv_event_t* e) {
     last_touch_time = millis();
-    if (target_temperature < 80) {
+    if (target_temperature < 65) {
         target_temperature += 5;
         updateTargetLabels();
     }
@@ -551,7 +551,7 @@ static void temp_up_btn_event_cb(lv_event_t* e) {
 
 static void temp_down_btn_event_cb(lv_event_t* e) {
     last_touch_time = millis();
-    if (target_temperature > 30) {
+    if (target_temperature > 25) {
         target_temperature -= 5;
         updateTargetLabels();
     }
@@ -1375,8 +1375,8 @@ static void update_wizard_temp_label() {
     snprintf(buf, sizeof(buf), "%d\xc2\xb0", wiz_temp);
     lv_label_set_text(lbl_wiz_temp, buf);
 }
-static void wiz_temp_up_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp < 80) { wiz_temp += 5; update_wizard_temp_label(); } }
-static void wiz_temp_dn_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp > 30) { wiz_temp -= 5; update_wizard_temp_label(); } }
+static void wiz_temp_up_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp < 65) { wiz_temp += 5; update_wizard_temp_label(); } }
+static void wiz_temp_dn_cb(lv_event_t*) { last_touch_time = millis(); if (wiz_temp > 25) { wiz_temp -= 5; update_wizard_temp_label(); } }
 
 static void update_wizard_household_label() {
     if (lbl_wiz_household == NULL) return;
@@ -1539,7 +1539,7 @@ static void build_settings_page(lv_obj_t* scr) {
     lv_obj_set_style_text_color(lbl_target_temp, CLR_ACCENT, 0);
 
     lv_obj_t* lbl_range = lv_label_create(target_col);
-    lv_label_set_text(lbl_range, "range 30-80" "\xc2\xb0");
+    lv_label_set_text(lbl_range, "range 25-65" "\xc2\xb0");
     lv_obj_set_style_text_font(lbl_range, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_range, CLR_SUBTEXT, 0);
 
@@ -2516,6 +2516,9 @@ static void build_diagnostics_page(lv_obj_t* scr) {
 static void load_saved_preferences() {
     int v;
     if (DataManager::loadSetting("target_temp", v))    target_temperature = v;
+    // Clamp to the allowed 25-65 C range (protects against stale saved values).
+    if (target_temperature < 25) target_temperature = 25;
+    if (target_temperature > 65) target_temperature = 65;
     if (DataManager::loadSetting("household_size", v)) g_pref_household   = v;
     if (DataManager::loadSetting("ready_hh", v))        g_pref_ready_hh    = v;
     if (DataManager::loadSetting("ready_mm", v))        g_pref_ready_mm    = v;
