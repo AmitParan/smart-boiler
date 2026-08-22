@@ -86,11 +86,10 @@ void PLC_SendStatus() {
 
     // Status bit-flags (volatile bools, single-byte reads — no mutex needed)
     uint8_t status = 0u;
-    if (local_flow     >= 1.0f)       status |= STATUS_FLOW_ACTIVE;
-    if (internal_ssr_on)              status |= STATUS_INTERNAL_ON;
-    if (boost_ssr_on)                 status |= STATUS_BOOST_ON;
-    if (system_fault)                 status |= STATUS_FAULT;
-    if (currentMode == MODE_REALTIME) status |= STATUS_MODE_REALTIME;
+    if (local_flow     >= 1.0f) status |= STATUS_FLOW_ACTIVE;
+    if (internal_ssr_on)        status |= STATUS_INTERNAL_ON;
+    if (boost_ssr_on)           status |= STATUS_BOOST_ON;
+    if (system_fault)           status |= STATUS_FAULT;
     pkt.statusByte = status;
 
     // CRC covers [packetType .. statusByte]
@@ -105,13 +104,16 @@ void PLC_SendStatus() {
         delay(2);
     }
 
-    // Serial output — keep short to avoid USB-CDC stalls on ESP32-C6
+    // Serial output
     if (currentMode == MODE_DEMO) {
-        Serial.printf("[S->M] seq=%03u | T=%4.1f | F=%4.1f | P=%4d | sts=0x%02X\n",
-                      pkt.sequence, local_temps[0], local_flow,
-                      (int)local_power, pkt.statusByte);
+        Serial.printf("[SLAVE]  [seq=%03u] SSR_INT: %-3s | SSR_BST: %-3s | TEMP: %4.1f\xc2\xb0""C | FLOW: %4.1fLPM | PWR: %4dW | CURR: %4.1fA\n",
+                      pkt.sequence,
+                      internal_ssr_on ? "ON " : "OFF",
+                      boost_ssr_on    ? "ON " : "OFF",
+                      local_temps[0], local_flow,
+                      (int)local_power, local_current);
     } else {
-        Serial.printf("[S->M] seq=%3u | t1=%5.1f t2=%5.1f t3=%5.1f | F=%4.1f P=%4.0fW | sts=0x%02X\n",
+        Serial.printf("[S->M] seq=%3u | t1=%5.1f  t2=%5.1f  t3=%5.1f | flow=%4.1f  pwr=%4.0fW | sts=0x%02X\n",
                       pkt.sequence,
                       local_temps[0], local_temps[1], local_temps[2],
                       local_flow, (float)pkt.powerWatts, pkt.statusByte);
@@ -245,39 +247,30 @@ bool PLC_ReceivePacket() {
                                 slave_demo_overtemp    = (cmd->cmdFlags & CMD_DEMO_OVERTEMP)  != 0;
                                 slave_demo_fault_sim   = (cmd->cmdFlags & CMD_DEMO_FAULT_SIM) != 0;
                                 if (currentMode != MODE_DEMO) {
-                                    if (serialModeOverride) {
-                                        Serial.println("[MODE] -> DEMO (master CMD overrode serial override)");
-                                        serialModeOverride = false;
-                                    } else {
-                                        Serial.println("[MODE] -> DEMO (master activated)");
-                                    }
                                     currentMode = MODE_DEMO;
+                                    Serial.println("[MODE] -> DEMO (master activated)");
                                 }
                             } else {
                                 slave_demo_flow_active = false;
                                 slave_demo_overtemp    = false;
                                 slave_demo_fault_sim   = false;
                                 if (currentMode == MODE_DEMO) {
-                                    if (serialModeOverride) {
-                                        Serial.println("[MODE] -> REALTIME (master CMD overrode serial override)");
-                                        serialModeOverride = false;
-                                    } else {
-                                        Serial.println("[MODE] -> REALTIME (master deactivated demo)");
-                                    }
                                     currentMode = MODE_REALTIME;
+                                    Serial.println("[MODE] -> REALTIME (master deactivated demo)");
                                 }
+                            }
+
+                            if (currentMode != MODE_DEMO) {
+                                Serial.printf("[S<-M] seq=%3u | pwmInt=%3u%%  pwmBst=%3u%% | flags=0x%02X\n",
+                                              cmd->sequence,
+                                              cmd->pwmInternal,
+                                              cmd->pwmBoost,
+                                              cmd->cmdFlags);
                             }
 
                             rx_state   = RX_WAIT_START;
                             rx_buf_idx = 0u;
                             rx_channel_free_ms = millis();
-                            // Log AFTER resetting state machine so any USB-CDC
-                            // stall doesn't cause Serial1 RX FIFO overflow.
-                            Serial.printf("[S<-M] seq=%3u | pwm=%u/%u | fl=0x%02X\n",
-                                          cmd->sequence,
-                                          cmd->pwmInternal,
-                                          cmd->pwmBoost,
-                                          cmd->cmdFlags);
                             return true;
 
                         } else {
