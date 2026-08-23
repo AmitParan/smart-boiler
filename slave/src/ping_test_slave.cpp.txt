@@ -1,0 +1,75 @@
+// =============================================================================
+//  PING TEST — SLAVE (ESP32-C6)
+//  PURPOSE: Prove the PLC link works with ZERO project code.
+//           No FreeRTOS, no protocol, no CRC, no sensors. Just raw UART.
+//
+//  HOW TO USE:
+//    1. In slave/src/, rename main.cpp -> main.cpp.bak
+//    2. Rename THIS file -> main.cpp  (drop the .txt)
+//    3. Build + upload to the slave.
+//    4. Open the slave serial monitor @ 115200.
+//    5. To restore the real firmware: delete main.cpp, rename main.cpp.bak -> main.cpp
+//
+//  WIRING: unchanged — slave Serial1 is TX=GPIO11, RX=GPIO10, through the
+//          KQ-330 modem, 9600 baud. (Same pins/baud as the real firmware.)
+//
+//  WHAT YOU SHOULD SEE:
+//    - Every 5s: "[SLAVE PING] raw bytes seen in last 5s: N"
+//      (N > 0 means bytes ARE crossing the modems, even if garbled.)
+//    - When a full PING line arrives, slave prints "[SLAVE GOT] <line>"
+//      and replies "PONG".
+//    - The master should then print the PONG it receives.
+//
+//  READING THE RESULT (evening test):
+//    * Master sees PONG          -> link fully works; bug is in project code.
+//    * Slave "raw bytes" > 0 but no PONG at master -> link works one way / noisy.
+//    * Slave "raw bytes" == 0    -> nothing crosses the modems at all -> hardware
+//                                   (modems, wiring to modem, power line/phase).
+// =============================================================================
+#include <Arduino.h>
+
+#define PLC_TX_PIN 11   // slave TX -> KQ-330 modem RX
+#define PLC_RX_PIN 10   // slave RX <- KQ-330 modem TX
+#define PLC_BAUD   9600
+
+static uint32_t last_report = 0;
+static uint32_t raw_bytes   = 0;
+static char     line_buf[64];
+static uint8_t  line_len    = 0;
+
+void setup() {
+    Serial.begin(115200);
+    delay(500);
+    Serial.println("=== SLAVE PING TEST ===");
+    Serial1.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
+    Serial.printf("[SLAVE PING] Serial1 up: TX=GPIO%d RX=GPIO%d @ %d baud\n",
+                  PLC_TX_PIN, PLC_RX_PIN, PLC_BAUD);
+    last_report = millis();
+}
+
+void loop() {
+    // 1. Read raw bytes, count them, assemble lines
+    while (Serial1.available()) {
+        char c = (char)Serial1.read();
+        raw_bytes++;
+
+        if (c == '\n' || line_len >= sizeof(line_buf) - 1) {
+            line_buf[line_len] = '\0';
+            if (line_len > 0) {
+                Serial.printf("[SLAVE GOT] \"%s\"  -> replying PONG\n", line_buf);
+                Serial1.printf("PONG\n");   // reply so the master can hear us
+            }
+            line_len = 0;
+        } else if (c >= 32 && c < 127) {
+            line_buf[line_len++] = c;
+        }
+    }
+
+    // 2. Every 5s report how many raw bytes crossed the wire
+    if (millis() - last_report >= 5000UL) {
+        Serial.printf("[SLAVE PING] raw bytes seen in last 5s: %lu\n",
+                      (unsigned long)raw_bytes);
+        raw_bytes   = 0;
+        last_report = millis();
+    }
+}

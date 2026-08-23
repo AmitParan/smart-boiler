@@ -1,0 +1,55 @@
+// =============================================================================
+//  PING TEST — MASTER (ESP32-S3)
+//  PURPOSE: Prove the PLC link works with ZERO project code.
+//           No FreeRTOS, no protocol, no CRC, no LVGL. Just raw UART.
+//
+//  HOW TO USE:
+//    1. In master/src/, rename main.cpp -> main.cpp.bak
+//    2. Rename THIS file -> main.cpp  (drop the .txt)
+//    3. Build + upload to the master.
+//    4. Open the master serial monitor @ 115200.
+//    5. To restore the real firmware: delete main.cpp, rename main.cpp.bak -> main.cpp
+//
+//  WIRING: unchanged — master Serial1 is TX=GPIO17, RX=GPIO13, through the
+//          KQ-330 modem, 9600 baud. (Same pins/baud as the real firmware.)
+//
+//  WHAT YOU SHOULD SEE:
+//    - Master prints "[MASTER PING] sent PING #N" once a second.
+//    - When the slave replies, master prints "[MASTER GOT] <bytes>".
+//    - If you see PONG coming back -> the link works, code is the problem.
+//    - If you see nothing coming back -> the link (modems) is the problem.
+// =============================================================================
+#include <Arduino.h>
+
+#define PLC_TX_PIN 17   // master TX -> KQ-330 modem RX
+#define PLC_RX_PIN 13   // master RX <- KQ-330 modem TX
+#define PLC_BAUD   9600
+
+static uint32_t last_send = 0;
+static uint32_t ping_num  = 0;
+
+void setup() {
+    Serial.begin(115200);
+    delay(500);
+    Serial.println("=== MASTER PING TEST ===");
+    Serial1.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
+    Serial.printf("[MASTER PING] Serial1 up: TX=GPIO%d RX=GPIO%d @ %d baud\n",
+                  PLC_TX_PIN, PLC_RX_PIN, PLC_BAUD);
+}
+
+void loop() {
+    // 1. Send a PING once a second
+    if (millis() - last_send >= 1000UL) {
+        last_send = millis();
+        ping_num++;
+        Serial1.printf("PING%lu\n", (unsigned long)ping_num);
+        Serial.printf("[MASTER PING] sent PING #%lu\n", (unsigned long)ping_num);
+    }
+
+    // 2. Print anything that arrives (raw)
+    while (Serial1.available()) {
+        char c = (char)Serial1.read();
+        Serial.printf("[MASTER GOT] 0x%02X '%c'\n", (uint8_t)c,
+                      (c >= 32 && c < 127) ? c : '.');
+    }
+}
