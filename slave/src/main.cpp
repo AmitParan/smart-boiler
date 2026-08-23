@@ -1,50 +1,62 @@
+// =============================================================================
+//  PING TEST BRANCH — SLAVE (ESP32-C6)   [branch: ping-test]
+//  Raw-UART link test. No FreeRTOS, no protocol, no CRC, no sensors.
+//  Restore the real firmware with:  git checkout v9_merge
+//
+//  Serial1: TX=GPIO11 -> KQ-330 modem RX,  RX=GPIO10 <- KQ-330 modem TX, 9600.
+//  Counts raw bytes/5s, prints assembled lines, replies PONG.
+//
+//  READING IT:
+//   * "[SLAVE GOT] \"PING123\"" clean  -> baud OK, corruption is elsewhere.
+//   * Garbage bytes instead of PING    -> baud/toolchain mismatch confirmed.
+//   * raw bytes == 0                    -> nothing crosses (shouldn't happen now).
+// =============================================================================
 #include <Arduino.h>
-#include "config.h"
-#include "flow_task.h"
-#include "temp_task.h"
-#include "current_task.h"
-#include "safety_task.h"
-#include "pwm_task_internal.h"
-#include "pwm_task_boost.h"
-#include "plc_task.h"
-#include "plc_test_sender.h"
-// Note: comms_slave (old JSON) removed — all comms now via binary PLC protocol
+
+#define PLC_TX_PIN 11
+#define PLC_RX_PIN 10
+#define PLC_BAUD   9600
+
+static uint32_t last_report = 0;
+static uint32_t raw_bytes   = 0;
+static char     line_buf[64];
+static uint8_t  line_len    = 0;
 
 void setup() {
     Serial.begin(115200);
     delay(500);
-    Serial.println("=== SLAVE UNIT STARTED ===");
-
-    // -----------------------------------------------------------------------
-    //  FreeRTOS task layout
-    //
-    //  Core 0  (WiFi/BT radio core — unused on slave, good for time-critical)
-    //    PLC    — must be responsive to KQ-330 UART traffic
-    //
-    //  Core 1  (application core)
-    //    Safety — highest priority, runs every 50 ms
-    //    PWM    — controls SSRs, must not be starved
-    //    Flow   — reads pulse counter from YF-B6
-    //    Temp   — reads DS18B20 (slow, 750 ms conversion)
-    //    Current— samples ACS758 ADC at 1 kHz for RMS
-    // -----------------------------------------------------------------------
-
-    // ESP32-C6 is single-core — all tasks pinned to Core 0
-    xTaskCreatePinnedToCore(TaskFlow,    "Flow",    4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(TaskTemp,    "Temp",    4096, NULL, 2, NULL, 0);
-    xTaskCreatePinnedToCore(TaskCurrent, "Current", 4096, NULL, 2, NULL, 0);
-
-    // Control tasks  (higher priority than sensors)
-    xTaskCreatePinnedToCore(TaskSafety,       "Safety",   4096, NULL, 4, NULL, 0);
-    xTaskCreatePinnedToCore(TaskPWM_Internal, "PWM_Int",  4096, NULL, 3, NULL, 0);
-    xTaskCreatePinnedToCore(TaskPWM_Boost,    "PWM_Bst",  4096, NULL, 3, NULL, 0);
-
-    // PLC communication — always use real task
-    // (SLAVE_TEST_MODE only bypasses safety interlocks, not comms)
-    xTaskCreatePinnedToCore(TaskPLC, "PLC", 4096, NULL, 2, NULL, 0);
+    Serial.println("=== SLAVE PING TEST ===");
+    Serial1.begin(PLC_BAUD, SERIAL_8N1, PLC_RX_PIN, PLC_TX_PIN);
+    Serial.printf("[SLAVE PING] Serial1 up: TX=GPIO%d RX=GPIO%d @ %d baud\n",
+                  PLC_TX_PIN, PLC_RX_PIN, PLC_BAUD);
+    last_report = millis();
 }
 
 void loop() {
-    // All work is done in FreeRTOS tasks — loop does nothing
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    while (Serial1.available()) {
+        char c = (char)Serial1.read();
+        raw_bytes++;
+
+        // Show every raw byte so corruption is visible directly
+        Serial.printf("  byte 0x%02X '%c'\n", (uint8_t)c,
+                      (c >= 32 && c < 127) ? c : '.');
+
+        if (c == '\n' || line_len >= sizeof(line_buf) - 1) {
+            line_buf[line_len] = '\0';
+            if (line_len > 0) {
+                Serial.printf("[SLAVE GOT] \"%s\"  -> replying PONG\n", line_buf);
+                Serial1.printf("PONG\n");
+            }
+            line_len = 0;
+        } else if (c >= 32 && c < 127) {
+            line_buf[line_len++] = c;
+        }
+    }
+
+    if (millis() - last_report >= 5000UL) {
+        Serial.printf("[SLAVE PING] raw bytes seen in last 5s: %lu\n",
+                      (unsigned long)raw_bytes);
+        raw_bytes   = 0;
+        last_report = millis();
+    }
 }
