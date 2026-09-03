@@ -1,3 +1,6 @@
 .codex_tmp/
 .pio/
 
+__pycache__/
+.claude/
+logs/

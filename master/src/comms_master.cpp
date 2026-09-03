@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include "boiler_protocol.h"
+#include "link.h"
+#include "link_config.h"
 #include "config.h"
 #include "ui_manager.h"
 #include "SystemManager.h"
@@ -12,23 +14,14 @@ extern bool boiler_state;
 extern int  target_temperature;
 
 // ---------------------------------------------------------------------------
-//  Receive state machine (mirrors the slave implementation)
+//  Sequence counters.
+//
+//  Frame reassembly used to live here as a byte-level receive state machine.
+//  It now belongs to the transport (link_plc.cpp), because it only ever
+//  existed to cope with the KQ-330 trickling bytes across the mains. UDP
+//  preserves message boundaries, so link_wifi.cpp needs none of it. Either
+//  way link_poll() hands this file one complete frame at a time.
 // ---------------------------------------------------------------------------
-enum RxState : uint8_t {
-    RX_WAIT_START = 0,
-    RX_READ_LENGTH,
-    RX_READ_PAYLOAD,
-    RX_READ_CRC,
-    RX_READ_END
-};
-
-static RxState   rx_state        = RX_WAIT_START;
-static uint8_t   rx_buf[32]      = {};
-static uint8_t   rx_buf_idx      = 0u;
-static uint8_t   rx_expected     = 0u;
-static uint32_t  rx_last_byte_ms = 0u;
-static const uint32_t RX_TIMEOUT_MS = 200u;
-
 static uint8_t   tx_seq          = 0u;
 static uint8_t   last_rx_seq     = 0xFFu;
 
@@ -234,18 +227,11 @@ static void sendCommand() {
     pkt.endByte = PROTO_END;
 
     // ---------------------------------------------------------------------------
-    //  KQ-330 TX TIMING — DO NOT CHANGE
-    //  Tested and verified: delay(2) per byte is required for reliable delivery.
-    //  - Bulk write (no gap) caused the KQ-330 to drop the last 3-4 bytes.
-    //  - Core 0 isolation ensures delay(2) is close to actual 2ms (no LVGL jitter).
-    //  - Total TX time: 9 bytes × ~3ms = ~27ms
+    //  Hand the finished frame to the transport.
+    //  The KQ-330 inter-byte timing that used to live here now belongs to
+    //  link_plc.cpp, where it is hardware-specific and documented.
     // ---------------------------------------------------------------------------
-    static const uint8_t KQ330_INTER_BYTE_DELAY_MS = 2u;
-    const uint8_t* raw = reinterpret_cast<const uint8_t*>(&pkt);
-    for (uint8_t i = 0u; i < (uint8_t)sizeof(pkt); i++) {
-        Serial1.write(raw[i]);
-        delay(KQ330_INTER_BYTE_DELAY_MS);
-    }
+    link_send(reinterpret_cast<const uint8_t*>(&pkt), (uint8_t)sizeof(pkt));
 
     // ---------------------------------------------------------------------------
     //  Serial logging
@@ -305,87 +291,37 @@ static void sendCommand() {
 //  Non-blocking receive. Call every 10 ms.
 // ---------------------------------------------------------------------------
 static bool receivePacket() {
-    // Reset on timeout
-    if (rx_state != RX_WAIT_START &&
-        (millis() - rx_last_byte_ms) > RX_TIMEOUT_MS) {
-        rx_state   = RX_WAIT_START;
-        rx_buf_idx = 0u;
-    }
+    link_service();
 
-    while (Serial1.available()) {
-        uint8_t b = (uint8_t)Serial1.read();
-        rx_last_byte_ms = millis();
+    uint8_t frame[LINK_MAX_FRAME];
+    uint8_t len = link_poll(frame, (uint8_t)sizeof(frame));
+    if (len == 0u) return false;
 
-        switch (rx_state) {
+    uint8_t pkt_type = frame[2];
+    uint8_t pkt_len  = frame[1];
 
-            case RX_WAIT_START:
-                if (b == PROTO_START) {
-                    rx_buf[0]  = b;
-                    rx_buf_idx = 1u;
-                    rx_state   = RX_READ_LENGTH;
-                }
-                break;
-
-            case RX_READ_LENGTH:
-                if (b == 0u || b > 20u) {
-                    rx_state = RX_WAIT_START; rx_buf_idx = 0u;
-                } else {
-                    rx_buf[1]   = b;
-                    rx_buf_idx  = 2u;
-                    rx_expected = b;
-                    rx_state    = RX_READ_PAYLOAD;
-                }
-                break;
-
-            case RX_READ_PAYLOAD:
-                rx_buf[rx_buf_idx++] = b;
-                if (--rx_expected == 0u) rx_state = RX_READ_CRC;
-                break;
-
-            case RX_READ_CRC:
-                rx_buf[rx_buf_idx++] = b;
-                rx_state = RX_READ_END;
-                break;
-
-            case RX_READ_END:
-                if (b == PROTO_END) {
-                    rx_buf[rx_buf_idx++] = b;
-
-                    uint8_t pkt_type = rx_buf[2];
-                    uint8_t pkt_len  = rx_buf[1];
-
-                    if (pkt_type == PROTO_TYPE_STATUS &&
-                        pkt_len  == STATUS_PAYLOAD_LEN) {
-
-                        uint8_t calc_crc = proto_crc8(rx_buf + 2u,
-                                                      STATUS_PAYLOAD_LEN);
-                        uint8_t recv_crc = rx_buf[2u + STATUS_PAYLOAD_LEN];
-
-                        if (calc_crc == recv_crc) {
-                            processStatusPacket(rx_buf);
-                            rx_state = RX_WAIT_START; rx_buf_idx = 0u;
-                            return true;
-                        } else {
-                            Serial.printf("[M<-S] CRC error "
-                                          "(calc 0x%02X recv 0x%02X)\n",
-                                          calc_crc, recv_crc);
-                        }
-
-                    } else if (pkt_type == PROTO_TYPE_CMD) {
-                        // Echo of our own CMD transmission — ignore
-                        Serial.println("[M<-S] own CMD echo ignored");
-                    } else {
-                        Serial.printf("[M<-S] unknown type 0x%02X\n",
-                                      pkt_type);
-                    }
-                } else {
-                    Serial.printf("[M<-S] bad end byte 0x%02X\n", b);
-                }
-                rx_state = RX_WAIT_START; rx_buf_idx = 0u;
-                break;
+    // ---- Not a STATUS: ignore, but say why ----
+    if (pkt_type != PROTO_TYPE_STATUS || pkt_len != STATUS_PAYLOAD_LEN) {
+        if (pkt_type == PROTO_TYPE_CMD) {
+            // Only possible on PLC, where the modem echoes our own transmission.
+            Serial.println("[M<-S] own CMD echo ignored");
+        } else {
+            Serial.printf("[M<-S] unknown type 0x%02X len=%u\n", pkt_type, pkt_len);
         }
+        return false;
     }
-    return false;
+
+    // ---- CRC covers [index 2 .. index 2+STATUS_PAYLOAD_LEN-1] ----
+    uint8_t calc_crc = proto_crc8(frame + 2u, STATUS_PAYLOAD_LEN);
+    uint8_t recv_crc = frame[2u + STATUS_PAYLOAD_LEN];
+    if (calc_crc != recv_crc) {
+        Serial.printf("[M<-S] CRC error (calc 0x%02X recv 0x%02X)\n",
+                      calc_crc, recv_crc);
+        return false;
+    }
+
+    processStatusPacket(frame);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -396,9 +332,9 @@ static bool receivePacket() {
 //  so they are unlikely to transmit at the same time.
 // ---------------------------------------------------------------------------
 void TaskMasterComms(void* pvParameters) {
-    Serial1.begin(9600, SERIAL_8N1, MASTER_RX_PIN, MASTER_TX_PIN);
-    Serial.printf("[COMMS] Master comms task started (RX=GPIO%d TX=GPIO%d)\n",
-                  MASTER_RX_PIN, MASTER_TX_PIN);
+    link_begin();
+    Serial.printf("[COMMS] Master comms task started over %s transport\n",
+                  link_name());
     Serial.printf("[COMMS] Mode: %s\n",
                   appMode == MODE_DEMO ? "DEMO" : "REALTIME");
 

@@ -1,5 +1,6 @@
 #include "plc_task.h"
 #include "plc_comms.h"
+#include "link.h"
 #include "config.h"
 #include <Arduino.h>
 
@@ -20,7 +21,8 @@
 // ---------------------------------------------------------------------------
 void TaskPLC(void* pvParameters) {
     PLC_Init();
-    Serial.println("[PLC] Task started — triggered STATUS response");
+    Serial.printf("[COMMS] Task started over %s — triggered STATUS response\n",
+                  link_name());
 
     uint32_t last_status_ms = millis();
 
@@ -28,15 +30,20 @@ void TaskPLC(void* pvParameters) {
         bool cmd_received = PLC_ReceivePacket();
 
         if (cmd_received) {
-        // ---------------------------------------------------------------------------
-        //  KQ-330 GUARD TIME — DO NOT CHANGE
-        //  200ms is required between CMD receipt and STATUS transmission.
-        //  This allows the KQ-330 power line carrier from the master's CMD to
-        //  fully settle before the slave begins transmitting STATUS.
-        //  Tested and verified at 200ms. Shorter values cause STATUS collisions.
-        // ---------------------------------------------------------------------------
-        static const uint16_t KQ330_GUARD_TIME_MS = 200u;
-        vTaskDelay(pdMS_TO_TICKS(KQ330_GUARD_TIME_MS));
+#ifndef LINK_WIFI
+            // -----------------------------------------------------------------
+            //  KQ-330 GUARD TIME — DO NOT CHANGE (PLC transport only)
+            //  200ms is required between CMD receipt and STATUS transmission.
+            //  This allows the KQ-330 power line carrier from the master's CMD
+            //  to fully settle before the slave begins transmitting STATUS.
+            //  Tested and verified at 200ms. Shorter values cause collisions.
+            //
+            //  WiFi needs none of this: UDP is full-duplex and there is no
+            //  shared carrier to settle, so we answer immediately.
+            // -----------------------------------------------------------------
+            static const uint16_t KQ330_GUARD_TIME_MS = 200u;
+            vTaskDelay(pdMS_TO_TICKS(KQ330_GUARD_TIME_MS));
+#endif
             PLC_SendStatus();
             last_status_ms = millis();
         }
