@@ -8,6 +8,64 @@ Git branch: `v9_merge` (integrated: scenario-alignment + smart-learning + UI)
 
 ---
 
+## Repository Layout — start here
+
+Both firmwares use the same folder scheme, so once you understand one you can
+read the other. Files are grouped by responsibility, and the folders are listed
+in the order they make sense to read.
+
+```
+master/src/                              slave/src/
+├── main.cpp      boot, WiFi/NTP,        ├── main.cpp      boot, mutexes,
+│                 LVGL render loop       │                 FreeRTOS task creation
+├── config/       pin map, wire          ├── config/       pin map, wire
+│                 protocol, LVGL and     │                 protocol, transport
+│                 display config         │                 ports, WiFi secrets
+├── comms/        transport backends     ├── comms/        transport backends
+│                 + master comms task    │                 + protocol + task
+├── control/      SystemManager state    ├── core/         shared state, mutexes,
+│                 machine, smart          │                 DEMO/REALTIME mode
+│                 preheat, app mode      ├── tasks/        the six FreeRTOS tasks:
+├── data/         statistics,            │                 temp, flow, current,
+│                 WiFi/NTP/weather       │                 safety, 2x SSR PWM
+├── ui/           LVGL screens,          └── diagnostics/  standalone test
+│                 display port layer                       sketches (not built)
+├── demo/         8-scenario test bench
+└── diagnostics/  standalone sketches
+```
+
+### Where do I look for…?
+
+| Question | File |
+|---|---|
+| What decides when the heater turns on? | `master/src/control/SystemManager.cpp` |
+| What do master and slave actually send each other? | `*/src/config/boiler_protocol.h` |
+| How do the bytes travel? | `*/src/comms/link.h` + `link_plc.cpp` / `link_wifi.cpp` |
+| How is an SSR actually switched? | `slave/src/tasks/pwm_task_internal.cpp` |
+| What protects against overheating / a stuck SSR? | `slave/src/tasks/safety_task.cpp` |
+| Where are the 8 demo scenarios scripted? | `master/src/demo/demo_scenarios.cpp` |
+| Which GPIO is what? | `*/src/config/config.h` |
+
+### The transport is switchable
+
+The master↔slave link runs over **either** the KQ-330 power-line modem **or**
+WiFi/UDP, carrying byte-identical packets. Everything above `comms/` — the state
+machine, the demo scenarios, the UI, every slave task — is transport-agnostic
+and was not modified when WiFi was added.
+
+Select it with one build flag, **the same on both sides**:
+
+```ini
+build_flags = -DLINK_WIFI     ; WiFi (UDP)
+;             (flag absent)   ; KQ-330 power-line modem
+```
+
+> **Note on `#include`:** every include stays short (`#include "config.h"`)
+> because each `platformio.ini` adds the `src/` subfolders to the include path.
+> No source file needed editing when the folders were introduced.
+
+---
+
 ## 0. v9_merge — What changed (latest)
 
 **Firmware alignment (from `feature/scenario-alignment`)**
