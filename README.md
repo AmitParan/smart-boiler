@@ -6,6 +6,12 @@ Final engineering project · Afeka College of Engineering, Tel Aviv
 Students: **Elad Moalem** (אלעד מועלם) · **Amit Paran** (עמית פארן)
 Supervisor: **Dmitry Teif** (דמיטרי טייף)
 
+> ### 👨‍🏫 Reviewing this project? Start with the **[Guided Code Tour →](CODE_TOUR.md)**
+> A short walkthrough of the safety architecture, the FreeRTOS mutex design, the
+> wire protocol and the transport abstraction — each claim shown alongside the
+> few lines of code that prove it, plus **four checks you can reproduce yourself**
+> on the hardware in under ten minutes.
+
 ---
 
 ## Table of contents

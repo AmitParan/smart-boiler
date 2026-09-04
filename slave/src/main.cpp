@@ -27,7 +27,7 @@ void setup() {
     guard_cmd     = xSemaphoreCreateMutex();
 
     if (!guard_temps || !guard_flow || !guard_current || !guard_cmd) {
-        Serial.println("[FATAL] Failed to create mutexes � halting.");
+        Serial.println("[FATAL] Failed to create mutexes - halting.");
         while (true) { vTaskDelay(pdMS_TO_TICKS(1000)); }
     }
 
