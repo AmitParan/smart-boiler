@@ -11,7 +11,7 @@ Every snippet is under 25 lines and can be read in one screen.
 **How to read this:** sections 1–4 are the evidence. Section 5 tells you how to
 **reproduce every claim yourself** on the hardware in a few minutes.
 
-> Line-number links point at commit `d2c5f93`, so they stay accurate permanently.
+> Line-number links point at commit `d3754fe`, so they stay accurate permanently.
 
 ---
 
@@ -24,7 +24,7 @@ that **the microcontroller will eventually fail**, so safety cannot depend on it
 
 This is the single most important — and most misreadable — line in the codebase.
 
-[`slave/src/tasks/pwm_task_internal.cpp:8-18`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/pwm_task_internal.cpp#L8-L18)
+[`slave/src/tasks/pwm_task_internal.cpp:8-18`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/pwm_task_internal.cpp#L8-L18)
 
 ```cpp
 //  HARDWARE-INTERLOCK REQUIREMENT  (Project Book: "Internal Watchdog Gate")
@@ -49,7 +49,7 @@ carrier. See project book §9.1.4(a) and Figure 32.
 
 ### 1.2 Fault state is checked before anything else
 
-[`slave/src/tasks/pwm_task_internal.cpp:23-28`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/pwm_task_internal.cpp#L23-L28)
+[`slave/src/tasks/pwm_task_internal.cpp:23-28`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/pwm_task_internal.cpp#L23-L28)
 
 ```cpp
 if (system_fault) {
@@ -70,7 +70,7 @@ delayed or out-voted by the control path. The identical block opens
 One of the five safety checks, and the one that shows failure-mode
 thinking rather than limit-checking.
 
-[`slave/src/tasks/safety_task.cpp:81-84`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/safety_task.cpp#L81-L84)
+[`slave/src/tasks/safety_task.cpp:82-85`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/safety_task.cpp#L82-L85)
 
 ```cpp
 bool any_commanded    = (local_pwm_int > 0u) || (local_pwm_bst > 0u);
@@ -89,7 +89,7 @@ faults. Refusing to act on data known to be untrustworthy is deliberate.
 
 ### 1.4 The link watchdog, and why `cmd_ever_received` exists
 
-[`slave/src/tasks/safety_task.cpp:96`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/safety_task.cpp#L96)
+[`slave/src/tasks/safety_task.cpp:97`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/safety_task.cpp#L97)
 
 ```cpp
 if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
@@ -109,15 +109,15 @@ The software checks in `TaskSafety` implement the **Logic Truth Table
 | Book Table 11 row | Enforced by |
 |---|---|
 | NTC overheat → everything off | LM393N comparator (hardware only, no firmware) |
-| Boost requires flow | `safety_task.cpp:66-74` **and** the BS170 flow gate |
+| Boost requires flow | `safety_task.cpp:67-75` **and** the BS170 flow gate |
 | Controller freeze → heater off | 1 kHz carrier + DC-blocking capacitor (§1.1) |
-| Uncommanded current → fault | `safety_task.cpp:81-93` |
+| Uncommanded current → fault | `safety_task.cpp:82-94` |
 | Implausible sensor reading → fault | `temp_task.cpp` range check + `safety_task.cpp` check 5 |
 
 Two of these rows are enforced **twice** — once in software, once in analog
 hardware. That redundancy is the point.
 
-**Full file:** [`slave/src/tasks/safety_task.cpp`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/safety_task.cpp) — priority 4, runs every 50 ms.
+**Full file:** [`slave/src/tasks/safety_task.cpp`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/safety_task.cpp) — priority 4, runs every 50 ms.
 
 ---
 
@@ -129,7 +129,7 @@ documented in the header rather than left implicit.
 
 ### 2.1 The guards are declared with their scope stated
 
-[`slave/src/core/shared_data.h:61-65`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/core/shared_data.h#L61-L65)
+[`slave/src/core/shared_data.h:73-77`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/core/shared_data.h#L73-L77)
 
 ```cpp
 extern SemaphoreHandle_t guard_temps;    ///< guards temps[3]
@@ -157,7 +157,7 @@ ownership means no write-write race is structurally possible.
 
 ### 2.3 Created before any task can run
 
-[`slave/src/main.cpp:24-33`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/main.cpp#L24-L33)
+[`slave/src/main.cpp:24-33`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/main.cpp#L24-L33)
 
 ```cpp
 guard_temps   = xSemaphoreCreateMutex();
@@ -178,7 +178,7 @@ exclusion must not run.
 
 ### 2.4 The access pattern: snapshot, release, then decide
 
-[`slave/src/tasks/safety_task.cpp:28-37`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/safety_task.cpp#L28-L37)
+[`slave/src/tasks/safety_task.cpp:29-38`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/tasks/safety_task.cpp#L29-L38)
 
 ```cpp
 if (xSemaphoreTake(guard_temps,   pdMS_TO_TICKS(5)) == pdTRUE) {
@@ -209,7 +209,7 @@ Three properties worth noticing:
 
 ### 3.1 A self-documenting frame
 
-[`slave/src/config/boiler_protocol.h:15-21`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/config/boiler_protocol.h#L15-L21)
+[`slave/src/config/boiler_protocol.h:15-21`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/config/boiler_protocol.h#L15-L21)
 
 ```
 //  Wire frame layout (little-endian multi-byte fields):
@@ -225,7 +225,7 @@ definition of truth for the link.
 
 ### 3.2 `#pragma pack(1)` — struct layout *is* the wire format
 
-[`slave/src/config/boiler_protocol.h:58-66`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/config/boiler_protocol.h#L58-L66)
+[`slave/src/config/boiler_protocol.h:58-66`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/config/boiler_protocol.h#L58-L66)
 
 ```cpp
 //  #pragma pack(1) eliminates compiler padding → sizeof == wire size
@@ -274,7 +274,7 @@ AA 0D 01 DE FA 00 E6 00 04 01 00 00 C3 09 02 52 55
 | `55` | endByte | 0x55 | frame end |
 
 You can verify the CRC yourself against
-[`proto_crc8()`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/config/boiler_protocol.h#L102-L113),
+[`proto_crc8()`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/config/boiler_protocol.h#L102-L113),
 and you can capture your own frames live — see §5.3.
 
 ---
@@ -316,7 +316,7 @@ void link_send(const uint8_t* data,
 </td></tr>
 </table>
 
-[`link_plc.cpp:60-65`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/comms/link_plc.cpp#L60-L65) · [`link_wifi.cpp:96-110`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/comms/link_wifi.cpp#L96-L110)
+[`link_plc.cpp:60-65`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/comms/link_plc.cpp#L60-L65) · [`link_wifi.cpp:96-110`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/comms/link_wifi.cpp#L96-L110)
 
 The PLC version must pace **every single byte** with a 2 ms gap — established by
 measurement, because a bulk write made the modem silently drop the last 3–4
@@ -334,13 +334,13 @@ boundaries.
 
 Roughly 55 lines of `link_plc.cpp` exist **solely** to cope with the physical
 behaviour of a power-line modem. Isolating them behind
-[`link.h`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/comms/link.h)
+[`link.h`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/comms/link.h)
 is what allowed WiFi to be added **without editing a single line** of
 `SystemManager`, the demo scenarios, the UI, or any slave task.
 
 ### 4.3 The whole interface
 
-[`slave/src/comms/link.h:22-42`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/comms/link.h#L22-L42) *(doc comments elided for brevity — see the file)*
+[`slave/src/comms/link.h:22-42`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/comms/link.h#L22-L42) *(doc comments elided for brevity — see the file)*
 
 ```cpp
 void        link_begin();                                   // bring transport up
