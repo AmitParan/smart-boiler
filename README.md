@@ -202,6 +202,10 @@ the project and the reason the design is defensible.
 2. The booster is never commanded while flow **< 1.0 L/min** (dry-fire)
 3. No **uncommanded current** is flowing — catches a welded/shorted SSR
 4. A **CMD packet arrived within the last 5 s** — otherwise the link is presumed lost
+5. Every temperature reading is **physically plausible** (−55…+125 °C) — a
+   disconnected DS18B20 reports −127 °C, which would otherwise convince the
+   controller the water is freezing and make it heat indefinitely while check 1
+   stays silent. A failed sensor must stop the heater, not command full power.
 
 Any failure latches `system_fault`, and both SSRs are cut immediately.
 

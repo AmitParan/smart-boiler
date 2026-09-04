@@ -34,6 +34,10 @@ volatile uint32_t last_cmd_received_ms = 0u;
 volatile bool     cmd_ever_received    = false;
 volatile bool     current_sensor_valid = false;  // set true only when VREF is in spec
 
+// Temperature sensor health (REALTIME only) - see shared_data.h
+volatile bool     temp_sensors_valid   = false;
+volatile bool     temp_ever_read       = false;  // no REALTIME read attempted yet
+
 // Spinlock for flow pulse counter ISR
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 

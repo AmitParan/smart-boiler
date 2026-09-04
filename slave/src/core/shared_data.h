@@ -54,6 +54,18 @@ extern volatile bool     cmd_ever_received;     ///< guards against false timeou
 extern volatile bool     current_sensor_valid;  ///< true only if ACS758 VREF within ±10% of 2.5V at calibration
 
 // ---------------------------------------------------------------------------
+//  Temperature sensor health (REALTIME only)
+//  A DS18B20 cannot physically read outside -55..+125 °C; the DallasTemperature
+//  library returns -127.0 for a disconnected device. Storing that as if it were
+//  a temperature would convince the controller the water is freezing and make it
+//  heat indefinitely, while the 80 °C overheat check never fires (-127 < 80).
+//  TaskTemp therefore range-checks every reading and reports health here.
+// ---------------------------------------------------------------------------
+extern volatile bool temp_sensors_valid;  ///< last REALTIME read produced 3 in-range values
+extern volatile bool temp_ever_read;      ///< guards against a false fault at boot,
+                                          ///< mirroring cmd_ever_received above
+
+// ---------------------------------------------------------------------------
 //  FreeRTOS mutual exclusion
 //  guard_*    : Created in main.cpp before any task starts.
 //  timerMux   : Spinlock used only inside the flow sensor ISR.

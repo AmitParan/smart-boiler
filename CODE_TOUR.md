@@ -67,7 +67,7 @@ delayed or out-voted by the control path. The identical block opens
 
 ### 1.3 Detecting a *welded* SSR — current with no command
 
-The least obvious of the four safety checks, and the one that shows failure-mode
+One of the five safety checks, and the one that shows failure-mode
 thinking rather than limit-checking.
 
 [`slave/src/tasks/safety_task.cpp:81-84`](https://github.com/AmitParan/smart-boiler/blob/d2c5f93/slave/src/tasks/safety_task.cpp#L81-L84)
@@ -102,7 +102,7 @@ yet — the slave may take up to 20 s to associate with WiFi.
 
 ### 1.5 Design → implementation traceability
 
-The four software checks in `TaskSafety` implement the **Logic Truth Table
+The software checks in `TaskSafety` implement the **Logic Truth Table
 (book Table 10)**; the analog gates implement the **Hardware Truth Table
 (book Table 11)**. The mapping is one-to-one:
 
@@ -112,6 +112,7 @@ The four software checks in `TaskSafety` implement the **Logic Truth Table
 | Boost requires flow | `safety_task.cpp:66-74` **and** the BS170 flow gate |
 | Controller freeze → heater off | 1 kHz carrier + DC-blocking capacitor (§1.1) |
 | Uncommanded current → fault | `safety_task.cpp:81-93` |
+| Implausible sensor reading → fault | `temp_task.cpp` range check + `safety_task.cpp` check 5 |
 
 Two of these rows are enforced **twice** — once in software, once in analog
 hardware. That redundancy is the point.

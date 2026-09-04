@@ -15,6 +15,7 @@ void TaskSafety(void* pvParameters) {
     static bool hw_interlock_logged     = false;
     static bool plc_timeout_logged      = false;
     static bool uncommanded_curr_logged = false;
+    static bool temp_sensor_logged      = false;
 
     for (;;) {
         bool fault = false;
@@ -104,6 +105,25 @@ void TaskSafety(void* pvParameters) {
             }
         } else {
             plc_timeout_logged = false;
+        }
+
+        // 5. Temperature sensor health (REALTIME only)
+        //    DEMO:     temps are injected by the master - the 1-Wire bus is never
+        //              read, so this check must not apply.
+        //    REALTIME: a reading outside -55..+125 C means a dead or disconnected
+        //              sensor. Without this check the controller would read -127,
+        //              believe the water is freezing and heat indefinitely, while
+        //              check 1 stays silent because -127 is not > 80.
+        //    temp_ever_read guards against a false latch before TaskTemp has had
+        //    a chance to run - same pattern as cmd_ever_received above.
+        if (currentMode == MODE_REALTIME && temp_ever_read && !temp_sensors_valid) {
+            fault = true;
+            if (!temp_sensor_logged) {
+                Serial.println("[SAFETY] FAULT: temperature sensor invalid - heaters cut");
+                temp_sensor_logged = true;
+            }
+        } else {
+            temp_sensor_logged = false;
         }
 
         if (fault) {
