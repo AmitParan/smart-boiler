@@ -6,6 +6,10 @@ Final engineering project · Afeka College of Engineering, Tel Aviv
 Students: **Elad Moalem** (אלעד מועלם) · **Amit Paran** (עמית פארן)
 Supervisor: **Dmitry Teif** (דמיטרי טייף)
 
+**Communication:** Master ↔ slave over **Power Line Communication** (KQ-330
+modems on the 220 VAC wiring) — the default build. A WiFi (UDP) transport is
+available as an option.
+
 > ### 👨‍🏫 Reviewing this project? Start with the **[Guided Code Tour →](CODE_TOUR.md)**
 > A short walkthrough of the safety architecture, the FreeRTOS mutex design, the
 > wire protocol and the transport abstraction — each claim shown alongside the
@@ -237,7 +241,11 @@ The master and slave communicate over **Power Line Communication**: each board
 drives a KQ-330 modem over UART (9600 bps), and the modems carry the packets
 across the 220 VAC mains wiring. The link medium is abstracted behind
 [`link.h`](slave/src/comms/link.h), so the **exact same bytes** can alternatively
-travel over WiFi:
+travel over WiFi.
+
+The PLC link was verified working on the bench: a CMD every second, a STATUS
+reply, CRC-8 validation and sequence numbers, with the KQ-330 timing constants
+(2 ms/byte, 200 ms half-duplex guard) locked in firmware.
 
 ```
        sendCommand() / PLC_SendStatus()          ← protocol, unchanged
