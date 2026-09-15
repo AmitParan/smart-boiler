@@ -1,22 +1,22 @@
 # PLC Communication Troubleshooting — KQ-330 Link
 
-**Use this when master ↔ slave stop communicating.** Work top-to-bottom, in order.
-Do **not** start changing firmware — history shows the code is stable; the fault is
-almost always the **physical modem link**.
+**Use this when installing the system, or if master ↔ slave are not communicating.**
+Work top-to-bottom, in order. The communication firmware is stable, so start with
+the **physical modem link** (wiring, power, mains phase) before touching code.
 
 ---
 
-## 0. Symptom reference (what "broken" looks like)
+## 0. Symptom reference
 
-| Where | Healthy | Broken |
+| Where | Healthy | Link problem |
 |-------|---------|--------|
 | Master monitor | `[M<-S]` lines with matching seq | `[COMMS] No STATUS received within 3s` |
 | Slave monitor  | `[S<-M]` lines / mode switches | only `[SLAVE]` heartbeat, no `[S<-M]` |
 | Ping test (slave) | `[SLAVE GOT] "PING5"` clean text | garbage bytes `0xFF 0x7F 0xFE…` |
 
-**Key rule proven in Aug 2026:** if the ping test shows the master sending **clean**
-`PING` but the slave receiving **garbage**, the ESPs and code are fine — the
-**KQ-330 modem link is corrupting the data.** Fix the hardware, not the firmware.
+**Rule of thumb:** if the ping test shows the master sending **clean** `PING` but
+the slave receiving garbage, the ESPs and code are fine — check the **KQ-330
+modem link** (hardware), not the firmware.
 
 ---
 
@@ -87,7 +87,7 @@ Confirms the ESP TX pin + wire are good.
 ## 4. If the modem link is good but ESP↔modem is suspect
 
 1. **Reseat / re-solder** the 3 wires between each ESP and its modem: TX, RX, GND.
-   A single cold joint on **DOUT** produces the `0xFF`-heavy garbage we saw.
+   A single cold joint on **DOUT** produces `0xFF`-heavy garbage.
 2. Verify pins in `config.h`: master TX=17 RX=13; slave TX=11 RX=10; baud 9600.
 3. Master TX (17) → Modem DIN; Modem DOUT → Master RX (13). **Do not swap.**
 4. Same for slave: TX(11)→DIN, DOUT→RX(10).
@@ -131,8 +131,6 @@ Try in order, re-testing 3A after each:
 - `boiler_protocol.h` is **byte-identical** between master and slave.
 - Timing constants (DO NOT CHANGE): 1000 ms CMD cadence, 3000 ms STATUS wait,
   200 ms guard, 2 ms/byte, 500 ms quiet, 5000 ms watchdog.
-- Master build is pinned (pioarduino 53.03.11 / Arduino core 3.1.1).
-  The **slave** platform is unpinned in v3/v7 (`platform = espressif32`); if a
-  clean rebuild ever behaves oddly, pin it to match the master.
-- Aug 2026 incident: root cause was the **modem link corrupting data** (ping test:
-  clean TX in, `0xFF`-garbage out). The code was never the problem.
+- Both builds are pinned to the same toolchain (pioarduino 53.03.11 / Arduino
+  core 3.1.1). Do not revert the slave to bare `platform = espressif32` — it
+  breaks ESP32-C6 `Serial1` RX.

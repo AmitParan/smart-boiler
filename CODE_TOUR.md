@@ -98,7 +98,8 @@ if (cmd_ever_received && (millis() - last_cmd_received_ms > PLC_TIMEOUT_MS)) {
 If the master goes silent for 5 s, the slave assumes the link is lost and cuts
 both elements. The `cmd_ever_received` guard prevents a **false trip at boot**,
 when `last_cmd_received_ms` is still zero and no CMD could possibly have arrived
-yet — the slave may take up to 20 s to associate with WiFi.
+yet — the link may take several seconds to come up after power-on (up to 20 s
+when built with the WiFi option).
 
 ### 1.5 Design → implementation traceability
 
@@ -281,13 +282,15 @@ and you can capture your own frames live — see §5.3.
 
 ## 4. The transport abstraction
 
+The master↔slave link runs over **Power Line Communication** (KQ-330 modems on
+the 220 VAC wiring) by default, with **WiFi (UDP)** available as a build option.
 The strongest argument for the abstraction is what the two implementations look
 like next to each other. **Same signature, same bytes in, same bytes out.**
 
 ### 4.1 Sending a frame — two worlds
 
 <table>
-<tr><th>PLC — KQ-330 over UART</th><th>WiFi — UDP</th></tr>
+<tr><th>PLC — KQ-330 over UART (default)</th><th>WiFi — UDP (option)</th></tr>
 <tr><td>
 
 ```cpp
@@ -335,8 +338,8 @@ boundaries.
 Roughly 55 lines of `link_plc.cpp` exist **solely** to cope with the physical
 behaviour of a power-line modem. Isolating them behind
 [`link.h`](https://github.com/AmitParan/smart-boiler/blob/d3754fe/slave/src/comms/link.h)
-is what allowed WiFi to be added **without editing a single line** of
-`SystemManager`, the demo scenarios, the UI, or any slave task.
+is what lets the WiFi option exist **without a single transport-specific line**
+in `SystemManager`, the demo scenarios, the UI, or any slave task.
 
 ### 4.3 The whole interface
 
@@ -354,8 +357,9 @@ const char* link_name();                                    // "PLC" / "WiFi"
 Six functions. Selected at build time by a single flag, identical on both sides:
 
 ```ini
-build_flags = -DLINK_WIFI     ; WiFi (UDP)
-;             (flag absent)   ; KQ-330 power-line modem
+build_flags =
+    ; -DLINK_WIFI    ; flag absent (default) -> KQ-330 power-line modem
+                     ; uncomment             -> WiFi (UDP)
 ```
 
 ---
@@ -379,10 +383,11 @@ the stuck-SSR detector of §1.3, and **Scenario 7** for the 80 °C cutoff.
 
 ### 5.2 Prove the transport abstraction is real (2 minutes)
 
-Delete `-DLINK_WIFI` from **both** `platformio.ini` files and rebuild. Both
-projects compile onto the power-line transport with no source changes:
+The default build uses the power-line transport. Uncomment `-DLINK_WIFI` in
+**both** `platformio.ini` files and rebuild — both projects compile onto WiFi
+with no source changes:
 
-| | PLC | WiFi |
+| | PLC (default) | WiFi (option) |
 |---|---|---|
 | Slave flash | 297,125 B (22.7 %) | 988,089 B (75.4 %) |
 | Master flash | 2,034,762 B (31.0 %) | 2,043,126 B (31.2 %) |
@@ -390,15 +395,17 @@ projects compile onto the power-line transport with no source changes:
 The ~690 KB difference on the slave is the WiFi stack — the application code is
 unchanged.
 
-### 5.3 Capture real packets on the wire (1 minute)
+### 5.3 Capture real packets (1 minute)
 
-With the system running over WiFi, from the repository root:
+Both firmwares print every frame they send and receive (`[M->S]`, `[S<-M]`,
+`[S->M]`, `[M<-S]`) on the serial monitor. With the WiFi option you can also
+sniff the link from a PC, from the repository root:
 
 ```bash
 python tools/udp_link_probe.py listen
 ```
 
-Every STATUS frame the slave broadcasts is printed as hex and ASCII. Decode one
+Every STATUS frame is printed as hex and ASCII. Decode one
 against the table in §3.3 — the temperatures, the power reading and the status
 bits will match what the two serial monitors are printing at that moment.
 

@@ -103,15 +103,15 @@ Two microcontrollers, deliberately separated by role:
 **Why two units?** The boiler is usually in a service balcony or on the roof —
 behind reinforced concrete, often inside or near a MAMAD (safe room). Putting
 the touchscreen there would be useless, and relying on WiFi reaching there was
-judged unsafe for a control link. The original design therefore carried the
-control link over **the building's own 220 VAC wiring** using Power Line
-Communication, which passes through concrete that WiFi cannot.
+judged unsafe for a control link. The control link therefore runs over **the
+building's own 220 VAC wiring** using **Power Line Communication (PLC)**, which
+passes through concrete that WiFi cannot.
 
-> **Engineering note — the transport changed.** The KQ-330 power-line modems
-> ultimately failed in hardware (see [section 6](#6-communication)). The firmware
-> was restructured so the link runs over **either** PLC **or** WiFi, chosen by a
-> single build flag, carrying byte-identical packets. Everything above the
-> transport was unaffected.
+> **Transport options.** PLC over KQ-330 modems is the default link. The
+> communication layer is abstracted, so the same firmware can alternatively run
+> the link over **WiFi (UDP)** with a single build flag, carrying byte-identical
+> packets. Everything above the transport is shared by both options
+> (see [section 6](#6-communication)).
 
 ## 4. Hardware
 
@@ -231,10 +231,13 @@ Temperatures are sent as `int16 × 10` (0.1 °C resolution), flow as `uint16 × 
 Cadence is **1 packet per second**, with a rolling sequence number so either side
 detects a dropped packet.
 
-### 6.2 The transport layer — PLC *or* WiFi
+### 6.2 The transport layer — PLC, with a WiFi option
 
-The link medium is abstracted behind [`link.h`](slave/src/comms/link.h), so the
-**exact same bytes** travel over either medium:
+The master and slave communicate over **Power Line Communication**: each board
+drives a KQ-330 modem over UART (9600 bps), and the modems carry the packets
+across the 220 VAC mains wiring. The link medium is abstracted behind
+[`link.h`](slave/src/comms/link.h), so the **exact same bytes** can alternatively
+travel over WiFi:
 
 ```
        sendCommand() / PLC_SendStatus()          ← protocol, unchanged
@@ -246,7 +249,7 @@ The link medium is abstracted behind [`link.h`](slave/src/comms/link.h), so the
    KQ-330 over UART        UDP over WiFi
 ```
 
-| | `link_plc.cpp` | `link_wifi.cpp` |
+| | `link_plc.cpp` **(default)** | `link_wifi.cpp` (option) |
 |---|---|---|
 | Framing | Byte-by-byte receive state machine | A datagram **is** a frame |
 | TX timing | 2 ms inter-byte gap (modem requirement) | none |
@@ -256,27 +259,20 @@ The link medium is abstracted behind [`link.h`](slave/src/comms/link.h), so the
 Selected by one build flag in `platformio.ini` — **the same on both sides**:
 
 ```ini
-build_flags = -DLINK_WIFI     ; WiFi (UDP)
-;             (flag absent)   ; KQ-330 power-line modem
+build_flags =
+    ; -DLINK_WIFI    ; flag absent (default) -> KQ-330 power-line modem
+                     ; uncomment             -> WiFi (UDP)
 ```
 
-### 6.3 Honest status of the PLC link
+### 6.3 PLC installation notes
 
-The PLC link worked during earlier development but **failed in hardware** during
-final integration. Diagnosis, in order:
+- Both KQ-330 modems must be on the **same electrical phase** of the mains.
+- The modem is half-duplex, so the protocol is strictly master-initiated
+  request/response, with a 200 ms guard before the slave replies.
+- Bytes are paced 2 ms apart, as the modem requires.
 
-1. Raw-UART PING/PONG sketches on both boards (no project code at all) showed the
-   master transmitting cleanly and the slave receiving **zero bytes**.
-2. An earlier session had seen clean data in and `0xFF` garbage out — the modem
-   link corrupting data.
-3. Root cause was never confirmed at component level. Prime suspects: the KQ-330
-   `MODE`/`RST` pins appearing to float, the J2 signal ribbon seating, and level
-   shifter U3's supply rail.
-
-Rather than block the project on a modem fault, the transport was abstracted and
-a WiFi backend added. **The PLC code remains complete and compiles** — it is a
-documented design that failed in hardware, not abandoned work. Full diagnostic
-procedure: [`TROUBLESHOOTING_PLC.md`](TROUBLESHOOTING_PLC.md).
+A step-by-step procedure for checking the modem link during installation is in
+[`TROUBLESHOOTING_PLC.md`](TROUBLESHOOTING_PLC.md).
 
 ## 7. Firmware architecture (FreeRTOS)
 
@@ -423,9 +419,10 @@ pio device monitor
 Set `upload_port` / `monitor_port` in each `platformio.ini` to your actual COM
 ports (`pio device list` will show them).
 
-### WiFi credentials (slave)
+### WiFi option — credentials (slave)
 
-The slave has no touchscreen, so its credentials are compiled in:
+Only needed when building with `-DLINK_WIFI`. The slave has no touchscreen, so
+its credentials are compiled in:
 
 ```bash
 cd slave/src/config
@@ -439,7 +436,7 @@ cp wifi_secrets.example.h wifi_secrets.h    # then edit with your SSID/password
 
 `slave/platformio.ini` sets `core_dir = C:/pio`. This is **required on Windows**:
 RISC-V gcc forwards all 278 framework include paths to the assembler, and with
-`<WiFi.h>` included the command line reaches 32,870 characters against Windows'
+`<WiFi.h>` included (WiFi option) the command line reaches 32,870 characters against Windows'
 32,767 limit — reported misleadingly as `cannot execute as.exe`. Create the short
 path once (no admin needed):
 
@@ -490,11 +487,11 @@ The complete energy analysis, simulation models and scenario plots are in
 | [`docs/plc-protocol.md`](docs/plc-protocol.md) | Packet protocol specification |
 | [`docs/smart-brain.md`](docs/smart-brain.md) | Learning algorithm design |
 | [`docs/smart-preheat.md`](docs/smart-preheat.md) | Pre-heat decision logic |
-| [`TROUBLESHOOTING_PLC.md`](TROUBLESHOOTING_PLC.md) | Ordered KQ-330 fault-finding procedure |
+| [`TROUBLESHOOTING_PLC.md`](TROUBLESHOOTING_PLC.md) | KQ-330 link installation and check procedure |
 | [`pcb/`](pcb/) | Schematic, board layout, Gerbers, drill files, BOM |
 | [`datasheets/`](datasheets/) | Datasheets for every component used |
 | [`Matlab/`](Matlab/) | Simulink model, 8 scenario scripts, energy analysis |
-| [`tools/`](tools/) | `serial_logger.py`, `udp_link_probe.py` |
+| [`tools/`](tools/) | `serial_logger.py`, `udp_link_probe.py` (WiFi option) |
 
 ---
 

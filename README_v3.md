@@ -46,18 +46,19 @@ master/src/                              slave/src/
 | Where are the 8 demo scenarios scripted? | `master/src/demo/demo_scenarios.cpp` |
 | Which GPIO is what? | `*/src/config/config.h` |
 
-### The transport is switchable
+### Transport — PLC, with a WiFi option
 
-The master↔slave link runs over **either** the KQ-330 power-line modem **or**
-WiFi/UDP, carrying byte-identical packets. Everything above `comms/` — the state
-machine, the demo scenarios, the UI, every slave task — is transport-agnostic
-and was not modified when WiFi was added.
+The master↔slave link runs over the **KQ-330 power-line modem** by default, with
+**WiFi/UDP** available as an option, carrying byte-identical packets. Everything
+above `comms/` — the state machine, the demo scenarios, the UI, every slave
+task — is transport-agnostic.
 
 Select it with one build flag, **the same on both sides**:
 
 ```ini
-build_flags = -DLINK_WIFI     ; WiFi (UDP)
-;             (flag absent)   ; KQ-330 power-line modem
+build_flags =
+    ; -DLINK_WIFI    ; flag absent (default) -> KQ-330 power-line modem
+                     ; uncomment             -> WiFi (UDP)
 ```
 
 > **Note on `#include`:** every include stays short (`#include "config.h"`)
