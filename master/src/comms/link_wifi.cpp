@@ -89,8 +89,13 @@ void link_send(const uint8_t* data, uint8_t len) {
     if (slave_known) {
         dst = slave_ip;
     } else {
-        dst = WiFi.localIP();
-        dst[3] = 255;                       // subnet broadcast, e.g. 10.0.0.255
+        // Directed broadcast = IP | ~netmask. It must come from the real mask,
+        // not a hardcoded x.x.x.255: a phone hotspot hands out a /28
+        // (172.20.10.0/28 -> broadcast .15), so the /24 assumption addresses a
+        // host outside the subnet and discovery never completes.
+        IPAddress ip   = WiFi.localIP();
+        IPAddress mask = WiFi.subnetMask();
+        for (uint8_t i = 0u; i < 4u; i++) dst[i] = ip[i] | (uint8_t)(~mask[i]);
     }
 
     udp.beginPacket(dst, LINK_UDP_PORT_CMD);
